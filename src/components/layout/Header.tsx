@@ -52,13 +52,15 @@ export const Header = () => {
                   >
                     Broker Dashboard
                   </Link>
-                  <Button 
-                    variant="default" 
-                    className="w-full"
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    List Your Property
-                  </Button>
+                  <Link to="/listings/new">
+                    <Button 
+                      variant="default" 
+                      className="w-full"
+                      onClick={() => setMenuOpen(false)}
+                    >
+                      List Your Property
+                    </Button>
+                  </Link>
                 </div>
               </div>
             )}
@@ -68,7 +70,9 @@ export const Header = () => {
             <Link to="/" className="hover:text-roverpass-purple">Home</Link>
             <Link to="/listings" className="hover:text-roverpass-purple">RV Parks For Sale</Link>
             <Link to="/broker/dashboard" className="hover:text-roverpass-purple">Broker Dashboard</Link>
-            <Button variant="default">List Your Property</Button>
+            <Link to="/listings/new">
+              <Button variant="default">List Your Property</Button>
+            </Link>
           </nav>
         )}
       </div>
