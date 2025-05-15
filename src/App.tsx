@@ -9,6 +9,7 @@ import NotFound from "./pages/NotFound";
 import Listings from "./pages/Listings";
 import ListingDetail from "./pages/ListingDetail";
 import BrokerDashboard from "./pages/BrokerDashboard";
+import AddListing from "./pages/AddListing";
 
 const queryClient = new QueryClient();
 
@@ -23,6 +24,7 @@ const App = () => (
           <Route path="/listings" element={<Listings />} />
           <Route path="/listings/:id" element={<ListingDetail />} />
           <Route path="/broker/dashboard" element={<BrokerDashboard />} />
+          <Route path="/listings/new" element={<AddListing />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
