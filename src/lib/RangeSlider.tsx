@@ -27,7 +27,7 @@ export const RangeSlider = React.forwardRef<
         </div>
       )}
       
-      <div className="relative"> {/* Added a relative container to properly scope marks */}
+      <div className="relative w-full pt-1 pb-6">
         <SliderPrimitive.Root
           ref={ref}
           className={`relative flex w-full touch-none select-none items-center ${className}`}
@@ -45,37 +45,29 @@ export const RangeSlider = React.forwardRef<
               />
             ))
           }
-          
-          {marks && (
-            <div className="absolute inset-x-0 top-1/2 -mt-0.5 pointer-events-none">
-              {marks.map((mark) => (
-                <div
-                  key={mark.value}
-                  className="absolute top-0 -translate-x-1/2 h-1 w-1 rounded-full bg-gray-400"
-                  style={{
-                    left: `${((mark.value - (props.min || 0)) / ((props.max || 100) - (props.min || 0))) * 100}%`,
-                  }}
-                />
-              ))}
-            </div>
-          )}
         </SliderPrimitive.Root>
         
-        {/* Mark labels in a contained way */}
         {marks && (
-          <div className="relative w-full h-6 mt-1">
-            {marks.map((mark) => (
-              <span 
-                key={mark.value}
-                className="absolute text-xs text-gray-500 transform -translate-x-1/2"
-                style={{
-                  left: `${((mark.value - (props.min || 0)) / ((props.max || 100) - (props.min || 0))) * 100}%`,
-                  top: 0,
-                }}
-              >
-                {mark.label}
-              </span>
-            ))}
+          <div className="absolute bottom-0 left-0 right-0 h-5 pointer-events-none">
+            {marks.map((mark) => {
+              // Calculate the percentage position
+              const percentage = ((mark.value - (props.min || 0)) / ((props.max || 100) - (props.min || 0))) * 100;
+              
+              return (
+                <div
+                  key={mark.value}
+                  className="absolute"
+                  style={{
+                    left: `${percentage}%`,
+                    transform: 'translateX(-50%)',
+                  }}
+                >
+                  <div className="text-xs text-gray-500">
+                    {mark.label}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

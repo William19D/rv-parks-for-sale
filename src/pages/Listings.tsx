@@ -273,73 +273,84 @@ const Listings = () => {
   // Apply filters with loading state
   useEffect(() => {
     const applyFilters = async () => {
-      setIsLoading(true);
-      // Simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 600));
-      
-      // Update the search in filterOptions
-      const updatedFilterOptions = {
-        ...filterOptions,
-        search: search || extendedFilters.search,
-        priceMin: extendedFilters.priceMin,
-        priceMax: extendedFilters.priceMax
-      };
-      
-      let filtered = filterListings(mockListings, updatedFilterOptions);
-      
-      // Apply extended filters
-      if (extendedFilters.states.length > 0) {
-        filtered = filtered.filter(listing => 
-          extendedFilters.states.includes(listing.location.state)
-        );
-      }
-      
-      if (extendedFilters.types.length > 0) {
-        filtered = filtered.filter(listing => {
-          // Mock implementation - adjust for your actual data
-          const listingType = listing.title.includes("RV") ? "RV Park" : 
-                             listing.title.includes("Camp") ? "Campground" : "Resort";
-          return extendedFilters.types.includes(listingType);
-        });
-      }
-      
-      if (extendedFilters.features.length > 0) {
-        filtered = filtered.filter(listing => {
-          return extendedFilters.features.some(feature => 
-            listing.description.toLowerCase().includes(feature.toLowerCase())
-          );
-        });
-      }
-      
-      // Filter by site count
-      filtered = filtered.filter(listing => 
-        listing.numSites >= extendedFilters.sitesMin && 
-        listing.numSites <= extendedFilters.sitesMax
+  setIsLoading(true);
+  // Simulate network delay
+  await new Promise(resolve => setTimeout(resolve, 600));
+  
+  // Update the search in filterOptions
+  const updatedFilterOptions = {
+    ...filterOptions,
+    search: search || extendedFilters.search,
+    priceMin: extendedFilters.priceMin,
+    priceMax: extendedFilters.priceMax
+  };
+  
+  let filtered = filterListings(mockListings, updatedFilterOptions);
+  
+  // Apply extended filters
+  if (extendedFilters.states.length > 0) {
+    filtered = filtered.filter(listing => 
+      extendedFilters.states.includes(listing.location.state)
+    );
+  }
+  
+  if (extendedFilters.types.length > 0) {
+    filtered = filtered.filter(listing => {
+      // Mock implementation - adjust for your actual data
+      const listingType = listing.title.includes("RV") ? "RV Park" : 
+                         listing.title.includes("Camp") ? "Campground" : "Resort";
+      return extendedFilters.types.includes(listingType);
+    });
+  }
+  
+  if (extendedFilters.features.length > 0) {
+    filtered = filtered.filter(listing => {
+      return extendedFilters.features.some(feature => 
+        listing.description.toLowerCase().includes(feature.toLowerCase())
       );
-      
-      // Filter by cap rate
-      if (extendedFilters.capRateMin > 0) {
-        filtered = filtered.filter(listing => listing.capRate >= extendedFilters.capRateMin);
-      }
-      
-      // Filter by occupancy
-      if (extendedFilters.occupancyRateMin > 0) {
-        filtered = filtered.filter(listing => listing.occupancyRate >= extendedFilters.occupancyRateMin);
-      }
-      
-      // Filter by listing date
-      if (extendedFilters.listedWithinDays) {
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - extendedFilters.listedWithinDays);
-        filtered = filtered.filter(listing => new Date(listing.createdAt) >= cutoffDate);
-      }
-      
-      // Apply sorting
-      filtered = sortListings(filtered, sortBy);
-      
-      setFilteredListings(filtered);
-      setIsLoading(false);
-    };
+    });
+  }
+  
+  // Filter by site count
+  filtered = filtered.filter(listing => 
+    listing.numSites >= extendedFilters.sitesMin && 
+    listing.numSites <= extendedFilters.sitesMax
+  );
+  
+  // Filter by cap rate
+  if (extendedFilters.capRateMin > 0) {
+    filtered = filtered.filter(listing => listing.capRate >= extendedFilters.capRateMin);
+  }
+  
+  // Filter by occupancy
+  if (extendedFilters.occupancyRateMin > 0) {
+    filtered = filtered.filter(listing => listing.occupancyRate >= extendedFilters.occupancyRateMin);
+  }
+  
+  // Filter by listing date
+  if (extendedFilters.listedWithinDays) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - extendedFilters.listedWithinDays);
+    filtered = filtered.filter(listing => new Date(listing.createdAt) >= cutoffDate);
+  }
+  
+  // Filter by annual revenue - AGREGADO
+  if (extendedFilters.revenueMin > initialExtendedFilters.revenueMin || 
+      extendedFilters.revenueMax < initialExtendedFilters.revenueMax) {
+    filtered = filtered.filter(listing => {
+      // Si tus datos no tienen un campo annualRevenue, puedes usar un valor calculado
+      // como aproximación, por ejemplo el 10% del precio como ingreso anual estimado
+      const revenue = listing.annualRevenue || listing.price * 0.1;
+      return revenue >= extendedFilters.revenueMin && revenue <= extendedFilters.revenueMax;
+    });
+  }
+  
+  // Apply sorting
+  filtered = sortListings(filtered, sortBy);
+  
+  setFilteredListings(filtered);
+  setIsLoading(false);
+};
     
     applyFilters();
   }, [filterOptions, extendedFilters, sortBy, search]);
@@ -918,7 +929,7 @@ const Listings = () => {
                                 <SelectValue placeholder="Any time" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="">Any time</SelectItem>
+                                <SelectItem value="any">Any time</SelectItem>
                                 <SelectItem value="7">Last 7 days</SelectItem>
                                 <SelectItem value="30">Last 30 days</SelectItem>
                                 <SelectItem value="90">Last 90 days</SelectItem>
@@ -1516,7 +1527,7 @@ const Listings = () => {
         <SelectValue placeholder="Any time" />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="">Any time</SelectItem>
+        <SelectItem value="any">Any time</SelectItem>
         <SelectItem value="7">Last 7 days</SelectItem>
         <SelectItem value="30">Last 30 days</SelectItem>
         <SelectItem value="90">Last 90 days</SelectItem>
