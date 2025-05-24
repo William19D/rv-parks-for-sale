@@ -59,9 +59,10 @@ const Register = () => {
         navigate("/login");
       }
     } catch (error) {
+      console.error('Registration error:', error);
       toast({
         title: "Error",
-        description: "Ocurrió un error inesperado",
+        description: "Error de configuración. Verifica la conexión con Supabase.",
         variant: "destructive",
       });
     } finally {
