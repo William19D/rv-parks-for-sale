@@ -113,7 +113,7 @@ const Index = () => {
                 </Link>
               </Button>
               <Button asChild size="lg" className="bg-white text-[#f74f4f] hover:bg-gray-100 hover:shadow-lg transition-all group">
-                <Link to="/broker/dashboard">List Your Property</Link>
+                <Link to="/listings/new">List Your Property</Link>
               </Button>
             </motion.div>
           </motion.div>
