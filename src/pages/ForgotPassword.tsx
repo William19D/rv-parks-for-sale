@@ -18,6 +18,25 @@ const ForgotPassword = () => {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Custom validation in English
+    if (!email) {
+      toast({
+        title: "Required Field",
+        description: "Please complete this field",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!email.includes('@')) {
+      toast({
+        title: "Invalid Email",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     if (!isSupabaseConfigured) {
       toast({
         title: "Configuration Error",
@@ -97,7 +116,7 @@ const ForgotPassword = () => {
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleResetPassword} className="space-y-4">
+              <form onSubmit={handleResetPassword} className="space-y-4" noValidate>
                 <div>
                   <Label htmlFor="email">Email</Label>
                   <Input
@@ -106,7 +125,6 @@ const ForgotPassword = () => {
                     placeholder="your@email.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    required
                   />
                 </div>
                 <Button 
