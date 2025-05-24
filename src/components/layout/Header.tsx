@@ -13,6 +13,38 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
+// Componente para el espaciado que coincide con la altura del header
+export const HeaderSpacer = () => {
+  const [headerHeight, setHeaderHeight] = useState<number>(0);
+  
+  useEffect(() => {
+    const updateHeight = () => {
+      const headerElement = document.querySelector('#main-header');
+      if (headerElement) {
+        setHeaderHeight(headerElement.clientHeight);
+      }
+    };
+    
+    // Actualizar altura inicialmente y en cada cambio de tamaño
+    updateHeight();
+    window.addEventListener('resize', updateHeight);
+    
+    // Actualizar también cuando cambia la clase (scroll)
+    const observer = new MutationObserver(updateHeight);
+    const headerElement = document.querySelector('#main-header');
+    if (headerElement) {
+      observer.observe(headerElement, { attributes: true });
+    }
+    
+    return () => {
+      window.removeEventListener('resize', updateHeight);
+      observer.disconnect();
+    };
+  }, []);
+  
+  return <div style={{ height: `${headerHeight}px` }}></div>;
+};
+
 export const Header = () => {
   const isMobile = useIsMobile();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -61,6 +93,7 @@ export const Header = () => {
 
   return (
     <header 
+      id="main-header" // ID para referenciarlo desde el HeaderSpacer
       className={cn(
         "fixed top-0 w-full z-50 transition-all duration-300 ease-in-out",
         scrolled 
