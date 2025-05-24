@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -17,7 +16,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
-// Componente para el espaciado que coincide con la altura del header
+// Component for spacing that matches the header height
 export const HeaderSpacer = () => {
   const [headerHeight, setHeaderHeight] = useState<number>(0);
   
@@ -29,11 +28,11 @@ export const HeaderSpacer = () => {
       }
     };
     
-    // Actualizar altura inicialmente y en cada cambio de tamaño
+    // Update height initially and on resize
     updateHeight();
     window.addEventListener('resize', updateHeight);
     
-    // Actualizar también cuando cambia la clase (scroll)
+    // Update when class changes (scroll)
     const observer = new MutationObserver(updateHeight);
     const headerElement = document.querySelector('#main-header');
     if (headerElement) {
@@ -77,7 +76,7 @@ export const Header = () => {
     setActiveDropdown(null);
   };
 
-  // Navigation items simplificados según la imagen
+  // Simplified navigation items as per the image
   const navItems = [
     {
       name: "Home",
@@ -103,7 +102,7 @@ export const Header = () => {
 
   return (
     <header 
-      id="main-header" // ID para referenciarlo desde el HeaderSpacer
+      id="main-header" // ID to reference from HeaderSpacer
       className={cn(
         "fixed top-0 w-full z-50 transition-all duration-300 ease-in-out",
         scrolled 
@@ -114,9 +113,9 @@ export const Header = () => {
       <div className="container mx-auto px-4 flex items-center justify-between">
         <div className="flex items-center">
           <Link to="/" className="flex items-center group" onClick={closeDropdowns}>
-            {/* Logo espacio */}
+            {/* Logo space */}
             <div className="w-48 h-12 flex items-center mr-4">
-              {/* Puedes reemplazar este div con tu imagen de logo real */}
+              {/* You can replace this div with your actual logo image */}
               <span className="text-2xl font-bold text-[#f74f4f] group-hover:opacity-80 transition-colors duration-300">
                 RoverPass
               </span>
@@ -168,7 +167,7 @@ export const Header = () => {
                         {user ? (
                           <div className="space-y-2">
                             <div className="text-sm text-gray-600 px-3 py-2">
-                              Hola, {user.email}
+                              Hello, {user.email}
                             </div>
                             <Button 
                               variant="outline" 
@@ -176,32 +175,23 @@ export const Header = () => {
                               onClick={handleSignOut}
                             >
                               <LogOut className="h-4 w-4 mr-2" />
-                              Cerrar Sesión
+                              Sign Out
                             </Button>
                           </div>
                         ) : (
                           <div className="space-y-2">
                             <Link to="/login" onClick={() => setMenuOpen(false)}>
                               <Button variant="outline" className="w-full">
-                                Iniciar Sesión
+                                Sign In
                               </Button>
                             </Link>
                             <Link to="/register" onClick={() => setMenuOpen(false)}>
                               <Button className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]">
-                                Registrarse
+                                Register
                               </Button>
                             </Link>
                           </div>
                         )}
-                        
-                        <Link to="/listings/new" onClick={() => setMenuOpen(false)}>
-                          <Button 
-                            variant="default" 
-                            className="w-full mt-2 bg-[#f74f4f] hover:bg-[#e43c3c] hover:shadow-md transition-all"
-                          >
-                            List Your Property
-                          </Button>
-                        </Link>
                       </div>
                     </div>
                   </div>
@@ -221,7 +211,7 @@ export const Header = () => {
                   >
                     {item.name}
                   </Link>
-                  {/* Animación de subrayado al hover */}
+                  {/* Hover underline animation */}
                   <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-[#f74f4f] group-hover:w-full transition-all duration-300"></span>
                 </div>
               ))}
@@ -230,7 +220,7 @@ export const Header = () => {
                 {user ? (
                   <div className="flex items-center space-x-2">
                     <span className="text-sm text-gray-600">
-                      Hola, {user.email?.split('@')[0]}
+                      Hello, {user.email?.split('@')[0]}
                     </span>
                     <Button 
                       variant="ghost"
@@ -245,7 +235,7 @@ export const Header = () => {
                   <div className="flex items-center space-x-2">
                     <Link to="/login">
                       <Button variant="ghost" size="sm">
-                        Iniciar Sesión
+                        Sign In
                       </Button>
                     </Link>
                     <Link to="/register">
@@ -253,20 +243,11 @@ export const Header = () => {
                         size="sm"
                         className="bg-[#f74f4f] hover:bg-[#e43c3c]"
                       >
-                        Registrarse
+                        Register
                       </Button>
                     </Link>
                   </div>
                 )}
-                
-                <Link to="/listings/new">
-                  <Button 
-                    variant="default"
-                    className="bg-[#f74f4f] hover:bg-[#e43c3c] hover:shadow-md transition-all rounded-md"
-                  >
-                    List Your Property
-                  </Button>
-                </Link>
               </div>
             </nav>
           </div>
