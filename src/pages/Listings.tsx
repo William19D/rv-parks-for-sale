@@ -4,7 +4,6 @@ import { Footer } from "@/components/layout/Footer";
 import { ListingCard } from "@/components/listings/ListingCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Slider } from "@/components/ui/slider";
 import { filterListings } from "@/lib/utils";
 import { mockListings, FilterOptions, initialFilterOptions, states } from "@/data/mockListings";
 import { motion, AnimatePresence } from "framer-motion";
@@ -50,42 +49,89 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { RangeSlider } from "@/lib/RangeSlider";
+import * as SliderPrimitive from '@radix-ui/react-slider';
 
-// Componente para el espaciado del header
+// Improved component for header spacing
 const HeaderSpacer = () => {
-  const [height, setHeight] = useState(76); // Valor predeterminado para evitar saltos
+  // Start with a generous default height to prevent layout jumps
+  const [height, setHeight] = useState(100); 
+  const spacerRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<MutationObserver | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
   useEffect(() => {
-    // Función para actualizar la altura basada en el elemento real
+    // Function to update the height based on the header element
     const updateHeight = () => {
       const headerElement = document.getElementById('main-header');
       if (headerElement) {
-        setHeight(headerElement.offsetHeight);
+        // Add a small buffer (5px) to ensure we have enough space
+        const headerHeight = headerElement.offsetHeight + 5;
+        setHeight(headerHeight);
+        
+        // Apply the height directly to the DOM for immediate effect
+        if (spacerRef.current) {
+          spacerRef.current.style.height = `${headerHeight}px`;
+        }
       }
     };
 
-    // Actualizar al montar y cuando cambie el tamaño de ventana
+    // Update height immediately and on window resize
     updateHeight();
-    window.addEventListener('resize', updateHeight);
-
-    // Observer para detectar cambios en el header (como al hacer scroll)
-    const observer = new MutationObserver(updateHeight);
+    
+    // Set up a resize observer for the header element
     const headerElement = document.getElementById('main-header');
+    if (headerElement && 'ResizeObserver' in window) {
+      resizeObserverRef.current = new ResizeObserver(() => {
+        updateHeight();
+      });
+      resizeObserverRef.current.observe(headerElement);
+    }
+    
+    // Also listen for window resize events
+    window.addEventListener('resize', updateHeight);
+    
+    // Set up a mutation observer to watch for changes in the header
     if (headerElement) {
-      observer.observe(headerElement, { 
+      observerRef.current = new MutationObserver(() => {
+        // Use setTimeout to ensure we get the final height after DOM updates
+        setTimeout(updateHeight, 50);
+      });
+      
+      observerRef.current.observe(headerElement, { 
         attributes: true,
         childList: true,
-        subtree: true
+        subtree: true,
+        characterData: true
       });
     }
+    
+    // Force multiple recalculations after load to catch any dynamic changes
+    setTimeout(updateHeight, 100);
+    setTimeout(updateHeight, 500);
+    setTimeout(updateHeight, 1000);
 
     return () => {
       window.removeEventListener('resize', updateHeight);
-      observer.disconnect();
+      
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+      
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+      }
     };
   }, []);
 
-  return <div style={{ height: `${height}px` }} />;
+  return (
+    <div 
+      ref={spacerRef} 
+      style={{ height: `${height}px`, minHeight: '80px' }} 
+      className="w-full"
+      aria-hidden="true"
+    />
+  );
 };
 
 // Tipos personalizados para propiedades adicionales
@@ -193,6 +239,19 @@ const Listings = () => {
   // Saved filter state
   const [hasSavedCurrentFilter, setHasSavedCurrentFilter] = useState(false);
   const [showRecentlyViewed, setShowRecentlyViewed] = useState(false);
+  
+  const formatPercent = (value: number) => {
+    return `${value}%`;
+  };
+
+  // Price range marks
+  const priceMarks = [
+    { value: 0, label: '$0' },
+    { value: 2500000, label: '$2.5M' },
+    { value: 5000000, label: '$5M' },
+    { value: 7500000, label: '$7.5M' },
+    { value: 10000000, label: '$10M' },
+  ];
   
   // Track active filters
   useEffect(() => {
@@ -461,12 +520,15 @@ const Listings = () => {
   return (
     <TooltipProvider>
       <div className="min-h-screen flex flex-col bg-gray-50">
-        {/* Header with ID wrapper */}
-        <div id="main-header">
+        {/* Fixed Header with z-index */}
+        <div 
+          id="main-header" 
+          className="fixed top-0 left-0 w-full z-50 bg-white shadow-sm"
+        >
           <Header />
         </div>
         
-        {/* HeaderSpacer */}
+        {/* Improved HeaderSpacer to create space for the fixed header */}
         <HeaderSpacer />
         
         {/* Hero Header with enhanced gradient */}
@@ -719,7 +781,7 @@ const Listings = () => {
                                 />
                               </div>
                             </div>
-                            <Slider
+                            <RangeSlider
                               min={0}
                               max={10000000}
                               step={100000}
@@ -730,15 +792,10 @@ const Listings = () => {
                                   priceMax: value[1]
                                 });
                               }}
-                              className="[&>span:first-child]:bg-[#f74f4f]"
+                              formatValue={formatCurrency}
+                              showValues={false}
+                              marks={priceMarks}
                             />
-                            <div className="flex justify-between text-xs text-gray-500 px-1">
-                              <span>$0</span>
-                              <span>$2.5M</span>
-                              <span>$5M</span>
-                              <span>$7.5M</span>
-                              <span>$10M+</span>
-                            </div>
                           </div>
                           
                           <Separator />
@@ -806,11 +863,7 @@ const Listings = () => {
                           {/* Site Count Range */}
                           <div className="space-y-4">
                             <Label className="text-base font-medium">Number of Sites</Label>
-                            <div className="flex justify-between text-sm">
-                              <span className="font-medium">{extendedFilters.sitesMin} sites</span>
-                              <span className="font-medium">{extendedFilters.sitesMax} sites</span>
-                            </div>
-                            <Slider
+                            <RangeSlider
                               min={0}
                               max={500}
                               step={10}
@@ -821,7 +874,7 @@ const Listings = () => {
                                   sitesMax: value[1]
                                 });
                               }}
-                              className="[&>span:first-child]:bg-[#f74f4f]"
+                              formatValue={(value) => `${value} sites`}
                             />
                           </div>
                           
@@ -830,11 +883,7 @@ const Listings = () => {
                           {/* Financial Metrics */}
                           <div className="space-y-4">
                             <Label className="text-base font-medium">Cap Rate</Label>
-                            <div className="flex justify-between text-sm">
-                              <span className="font-medium">{extendedFilters.capRateMin}%</span>
-                              <span className="font-medium">15%+</span>
-                            </div>
-                            <Slider
+                            <RangeSlider
                               min={0}
                               max={15}
                               step={0.5}
@@ -844,7 +893,11 @@ const Listings = () => {
                                   capRateMin: value[0]
                                 });
                               }}
-                              className="[&>span:first-child]:bg-[#f74f4f]"
+                              formatValue={formatPercent}
+                              marks={[
+                                { value: 0, label: '0%' },
+                                { value: 15, label: '15%+' },
+                              ]}
                             />
                           </div>
                           
@@ -907,11 +960,7 @@ const Listings = () => {
                           {/* Sites Range */}
                           <div className="space-y-4">
                             <Label className="text-base font-medium">Number of Sites</Label>
-                            <div className="flex justify-between text-sm">
-                              <span className="font-medium">{extendedFilters.sitesMin} sites</span>
-                              <span className="font-medium">{extendedFilters.sitesMax} sites</span>
-                            </div>
-                            <Slider
+                            <RangeSlider
                               min={0}
                               max={500}
                               step={10}
@@ -922,7 +971,7 @@ const Listings = () => {
                                   sitesMax: value[1]
                                 });
                               }}
-                              className="[&>span:first-child]:bg-[#f74f4f]"
+                              formatValue={(value) => `${value} sites`}
                             />
                           </div>
                           
@@ -1007,7 +1056,7 @@ const Listings = () => {
                                 />
                               </div>
                             </div>
-                            <Slider
+                            <RangeSlider
                               min={0}
                               max={10000000}
                               step={100000}
@@ -1018,7 +1067,9 @@ const Listings = () => {
                                   priceMax: value[1]
                                 });
                               }}
-                              className="[&>span:first-child]:bg-[#f74f4f]"
+                              formatValue={formatCurrency}
+                              showValues={false}
+                              marks={priceMarks}
                             />
                           </div>
                           
@@ -1027,11 +1078,7 @@ const Listings = () => {
                           {/* Cap Rate */}
                           <div className="space-y-4">
                             <Label className="text-base font-medium">Minimum Cap Rate</Label>
-                            <div className="flex justify-between text-sm">
-                              <span className="font-medium">{extendedFilters.capRateMin}%</span>
-                              <span className="font-medium">15%+</span>
-                            </div>
-                            <Slider
+                            <RangeSlider
                               min={0}
                               max={15}
                               step={0.5}
@@ -1041,7 +1088,13 @@ const Listings = () => {
                                   capRateMin: value[0]
                                 });
                               }}
-                              className="[&>span:first-child]:bg-[#f74f4f]"
+                              formatValue={formatPercent}
+                              marks={[
+                                { value: 0, label: '0%' },
+                                { value: 5, label: '5%' },
+                                { value: 10, label: '10%' },
+                                { value: 15, label: '15%+' },
+                              ]}
                             />
                           </div>
                           
@@ -1050,11 +1103,7 @@ const Listings = () => {
                           {/* Occupancy Rate */}
                           <div className="space-y-4">
                             <Label className="text-base font-medium">Minimum Occupancy Rate</Label>
-                            <div className="flex justify-between text-sm">
-                              <span className="font-medium">{extendedFilters.occupancyRateMin}%</span>
-                              <span className="font-medium">100%</span>
-                            </div>
-                            <Slider
+                            <RangeSlider
                               min={0}
                               max={100}
                               step={5}
@@ -1064,7 +1113,12 @@ const Listings = () => {
                                   occupancyRateMin: value[0]
                                 });
                               }}
-                              className="[&>span:first-child]:bg-[#f74f4f]"
+                              formatValue={formatPercent}
+                              marks={[
+                                { value: 0, label: '0%' },
+                                { value: 50, label: '50%' },
+                                { value: 100, label: '100%' },
+                              ]}
                             />
                           </div>
                           
@@ -1073,11 +1127,7 @@ const Listings = () => {
                           {/* Annual Revenue */}
                           <div className="space-y-4">
                             <Label className="text-base font-medium">Annual Revenue</Label>
-                            <div className="flex justify-between text-sm">
-                              <span className="font-medium">{formatCurrency(extendedFilters.revenueMin)}</span>
-                              <span className="font-medium">{formatCurrency(extendedFilters.revenueMax)}</span>
-                            </div>
-                            <Slider
+                            <RangeSlider
                               min={0}
                               max={5000000}
                               step={100000}
@@ -1088,7 +1138,7 @@ const Listings = () => {
                                   revenueMax: value[1]
                                 });
                               }}
-                              className="[&>span:first-child]:bg-[#f74f4f]"
+                              formatValue={formatCurrency}
                             />
                           </div>
                         </TabsContent>
@@ -1222,7 +1272,7 @@ const Listings = () => {
                         />
                       </div>
                     </div>
-                    <Slider
+                    <RangeSlider
                       min={0}
                       max={10000000}
                       step={100000}
@@ -1233,15 +1283,10 @@ const Listings = () => {
                           priceMax: value[1]
                         });
                       }}
-                      className="[&>span:first-child]:bg-[#f74f4f]"
+                      formatValue={formatCurrency}
+                      showValues={false}
+                      marks={priceMarks}
                     />
-                    <div className="flex justify-between text-xs text-gray-500 mt-1 px-1">
-                      <span>$0</span>
-                      <span>$2.5M</span>
-                      <span>$5M</span>
-                      <span>$7.5M</span>
-                      <span>$10M</span>
-                    </div>
                   </div>
                   
                   {/* Location with multi-select */}
@@ -1315,356 +1360,355 @@ const Listings = () => {
                                 className="data-[state=checked]:bg-[#f74f4f] data-[state=checked]:border-[#f74f4f]"
                               />
                               <label htmlFor={`desktop-type-${type.id}`} className="text-sm cursor-pointer flex items-center gap-1">
-                                <type.icon className="h-3.5 w-3.5 text-gray-500" />
-                                {type.label}
-                              </label>
-                            </div>
-                          ))}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  
-                  {/* Number of sites */}
-                  <div className="w-48">
-                    <Label className="text-sm font-medium mb-2 block">Number of Sites</Label>
-                    <div className="flex justify-between text-xs text-gray-500 mb-2">
-                      <span>{extendedFilters.sitesMin} - {extendedFilters.sitesMax} sites</span>
-                    </div>
-                    <Slider
-                      min={0}
-                      max={500}
-                      step={10}
-                      value={[extendedFilters.sitesMin, extendedFilters.sitesMax]}
-                      onValueChange={(value) => {
-                        handleFilterChange({
-                          sitesMin: value[0],
-                          sitesMax: value[1]
-                        });
-                      }}
-                                            className="[&>span:first-child]:bg-[#f74f4f]"
-                    />
-                  </div>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="amenities" className="p-4 border-0 mt-0">
-                <div className="grid grid-cols-3 gap-6">
-                  <div className="col-span-3 mb-2">
-                    <h3 className="font-medium text-sm text-gray-700">Available Amenities & Features</h3>
-                    <p className="text-xs text-gray-500">Select the features you're looking for in a property</p>
-                  </div>
-                  
-                  {amenityFeatures.map((feature) => (
-                    <div key={feature} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`desktop-feature-${feature}`}
-                        checked={extendedFilters.features.includes(feature)}
-                        onCheckedChange={(checked) => {
-                          const newFeatures = checked
-                            ? [...extendedFilters.features, feature]
-                            : extendedFilters.features.filter(f => f !== feature);
-                          handleFilterChange({ features: newFeatures });
-                        }}
-                        className="data-[state=checked]:bg-[#f74f4f] data-[state=checked]:border-[#f74f4f]"
-                      />
-                      <label htmlFor={`desktop-feature-${feature}`} className="text-sm cursor-pointer">
-                        {feature}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="financial" className="p-4 border-0 mt-0">
-                <div className="grid grid-cols-2 gap-8">
-                  {/* Cap Rate */}
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium">Minimum Cap Rate</Label>
-                      <span className="text-sm font-medium">
-                        {extendedFilters.capRateMin}%+
-                      </span>
-                    </div>
-                    <Slider
-                      min={0}
-                      max={15}
-                      step={0.5}
-                      value={[extendedFilters.capRateMin]}
-                      onValueChange={(value) => {
-                        handleFilterChange({
-                          capRateMin: value[0]
-                        });
-                      }}
-                      className="[&>span:first-child]:bg-[#f74f4f]"
-                    />
-                    <div className="flex justify-between text-xs text-gray-500">
-                      <span>0%</span>
-                      <span>5%</span>
-                      <span>10%</span>
-                      <span>15%+</span>
-                    </div>
-                  </div>
-                  
-                  {/* Occupancy Rate */}
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium">Minimum Occupancy Rate</Label>
-                      <span className="text-sm font-medium">
-                        {extendedFilters.occupancyRateMin}%+
-                      </span>
-                    </div>
-                    <Slider
-                      min={0}
-                      max={100}
-                      step={5}
-                      value={[extendedFilters.occupancyRateMin]}
-                      onValueChange={(value) => {
-                        handleFilterChange({
-                          occupancyRateMin: value[0]
-                        });
-                      }}
-                      className="[&>span:first-child]:bg-[#f74f4f]"
-                    />
-                    <div className="flex justify-between text-xs text-gray-500">
-                      <span>0%</span>
-                      <span>50%</span>
-                      <span>100%</span>
-                    </div>
-                  </div>
-                  
-                  {/* Annual Revenue */}
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium">Annual Revenue</Label>
-                      <div className="text-xs text-gray-500">
-                        {formatCurrency(extendedFilters.revenueMin)} - {formatCurrency(extendedFilters.revenueMax)}
-                      </div>
-                    </div>
-                    <Slider
-                      min={0}
-                      max={5000000}
-                      step={100000}
-                      value={[extendedFilters.revenueMin, extendedFilters.revenueMax]}
-                      onValueChange={(value) => {
-                        handleFilterChange({
-                          revenueMin: value[0],
-                          revenueMax: value[1]
-                        });
-                      }}
-                      className="[&>span:first-child]:bg-[#f74f4f]"
-                    />
-                  </div>
-                  
-                  {/* Date Listed */}
-                  <div className="space-y-4">
-                    <Label className="text-sm font-medium">Date Listed</Label>
-                    <Select
-                      value={extendedFilters.listedWithinDays?.toString() || ""}
-                      onValueChange={(value) => {
-                        handleFilterChange({
-                          listedWithinDays: value ? parseInt(value) : null
-                        });
-                      }}
-                    >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Any time" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">Any time</SelectItem>
-                        <SelectItem value="7">Last 7 days</SelectItem>
-                        <SelectItem value="30">Last 30 days</SelectItem>
-                        <SelectItem value="90">Last 90 days</SelectItem>
-                        <SelectItem value="180">Last 6 months</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="saved" className="p-4 border-0 mt-0">
-                {savedSearches.length > 0 ? (
-                  <div className="space-y-4">
-                    <p className="text-sm text-gray-500">Your saved searches</p>
-                    
-                    {savedSearches.map((savedSearch, index) => (
-                      <div key={index} className="flex items-center justify-between bg-gray-50 p-3 rounded-md hover:bg-gray-100">
-                        <div>
-                          <h4 className="font-medium text-sm">{savedSearch.name}</h4>
-                          <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                            <span>{savedSearch.count} properties</span>
-                            <span>•</span>
-                            <span>Updated {savedSearch.lastUpdated}</span>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="outline" size="sm" className="h-8 w-8 p-0">
-                                <Zap className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Apply this search</p>
-                            </TooltipContent>
-                          </Tooltip>
-                          
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="outline" size="sm" className="h-8 w-8 p-0">
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Delete saved search</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </div>
-                    ))}
-                    
-                    <Button variant="outline" size="sm" className="mt-2 w-full">
-                      <Bookmark className="h-4 w-4 mr-2" />
-                      Save current search
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <Bookmark className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                    <h3 className="font-medium mb-1">No saved searches</h3>
-                    <p className="text-sm text-gray-500 mb-4">Save your favorite searches for quick access later</p>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={saveCurrentFilter}
-                      disabled={activeFilters.length === 0}
-                    >
-                      <Save className="mr-2 h-4 w-4" />
-                      Save current search
-                    </Button>
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
-          </div>
-          
-          {/* Results */}
-          <div className="mb-10">
-            {isLoading ? (
-              <div className="py-10 flex flex-col items-center justify-center">
-                <div className="w-10 h-10 border-4 border-[#f74f4f]/20 border-t-[#f74f4f] rounded-full animate-spin mb-4"></div>
-                <p className="text-muted-foreground">Searching for properties...</p>
-              </div>
-            ) : filteredListings.length === 0 ? (
-              <div className="bg-white rounded-lg border py-16 text-center">
-                <div className="mx-auto w-16 h-16 bg-[#f74f4f]/10 rounded-full flex items-center justify-center mb-4">
-                  <Search className="h-8 w-8 text-[#f74f4f]" />
-                </div>
-                <h2 className="text-2xl font-bold mb-2">No listings found</h2>
-                <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                  We couldn't find any properties matching your criteria. Try adjusting your filters or search terms.
-                </p>
-                <Button onClick={clearFilters} className="bg-[#f74f4f] hover:bg-[#e43c3c]">
-                  Clear all filters
-                </Button>
-              </div>
-            ) : view === 'grid' ? (
-              <motion.div 
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-                variants={containerVariants}
-                initial="hidden"
-                animate="visible"
-              >
-                <AnimatePresence>
-                  {filteredListings.map(listing => (
-                    <motion.div 
-                      key={listing.id} 
-                      variants={itemVariants}
-                      initial="hidden"
-                      animate="visible"
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.3 }}
-                      layout
-                    >
-                      <ListingCard listing={listing} />
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </motion.div>
-            ) : (
-              <div className="relative h-[600px] bg-gray-100 rounded-lg border overflow-hidden">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <Map className="h-10 w-10 text-gray-400 mb-2 mx-auto" />
-                    <h3 className="font-medium mb-1">Map View</h3>
-                    <p className="text-gray-500 text-sm">Interactive map would be displayed here</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-          
-          {/* Enhanced pagination with stats */}
-          {filteredListings.length > 0 && (
-            <div className="flex flex-col md:flex-row justify-between items-center my-8">
-              <p className="text-sm text-gray-500 mb-4 md:mb-0">
-                Showing <span className="font-medium">{Math.min(1, filteredListings.length)}-{Math.min(12, filteredListings.length)}</span> of <span className="font-medium">{filteredListings.length}</span> properties
-              </p>
-              
-              <nav className="inline-flex rounded-md shadow-sm">
-                <Button variant="outline" size="sm" className="rounded-r-none">
-                  Previous
-                </Button>
-                <Button variant="outline" size="sm" className="rounded-none border-l-0 bg-[#f74f4f] text-white border-[#f74f4f]">
-                  1
-                </Button>
-                <Button variant="outline" size="sm" className="rounded-none border-l-0">
-                  2
-                </Button>
-                <Button variant="outline" size="sm" className="rounded-none border-l-0">
-                  3
-                </Button>
-                <Button variant="outline" size="sm" className="rounded-l-none border-l-0">
-                  Next
-                </Button>
-              </nav>
-            </div>
-          )}
-        </div>
-        
-        {/* Enhanced CTA Section */}
-        <div className="bg-[#2d3748] py-12 mt-auto">
-          <div className="container mx-auto px-4">
-            <div className="bg-gradient-to-r from-[#f74f4f] to-[#ff7a45] rounded-xl p-8 md:p-10 shadow-lg relative overflow-hidden">
-              <div className="absolute inset-0 overflow-hidden opacity-20">
-                <div className="absolute top-10 right-10 w-40 h-40 bg-white rounded-full blur-3xl"></div>
-                <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-white rounded-full blur-3xl"></div>
-              </div>
-              
-              <div className="max-w-3xl mx-auto text-center relative z-10">
-                <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">Looking for a specific RV park?</h2>
-                <p className="text-white/90 mb-8 text-lg">
-                  Tell us what you're looking for and we'll help you find the perfect property. Join our buyers list for early access to new listings.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
-                  <Input
-                    placeholder="Email address"
-                    className="bg-white/90 border-0 focus:ring-2 focus:ring-white text-gray-800 placeholder-gray-500 h-12"
-                  />
-                  <Button className="bg-white text-[#f74f4f] hover:bg-gray-100 h-12 px-6">
-                    Join Buyer List
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <Footer />
+  <type.icon className="h-3.5 w-3.5 text-gray-500" />
+  {type.label}
+</label>
+</div>
+))}
+</div>
+</PopoverContent>
+</Popover>
+</div>
+
+{/* Number of sites */}
+<div className="w-48">
+  <Label className="text-sm font-medium mb-2 block">Number of Sites</Label>
+  <div className="flex justify-between text-xs text-gray-500 mb-2">
+    <span>{extendedFilters.sitesMin} - {extendedFilters.sitesMax} sites</span>
+  </div>
+  <RangeSlider
+    min={0}
+    max={500}
+    step={10}
+    value={[extendedFilters.sitesMin, extendedFilters.sitesMax]}
+    onValueChange={(value) => {
+      handleFilterChange({
+        sitesMin: value[0],
+        sitesMax: value[1]
+      });
+    }}
+    formatValue={(value) => `${value} sites`}
+  />
+</div>
+</div>
+</TabsContent>
+
+<TabsContent value="amenities" className="p-4 border-0 mt-0">
+<div className="grid grid-cols-3 gap-6">
+  <div className="col-span-3 mb-2">
+    <h3 className="font-medium text-sm text-gray-700">Available Amenities & Features</h3>
+    <p className="text-xs text-gray-500">Select the features you're looking for in a property</p>
+  </div>
+  
+  {amenityFeatures.map((feature) => (
+    <div key={feature} className="flex items-center space-x-2">
+      <Checkbox
+        id={`desktop-feature-${feature}`}
+        checked={extendedFilters.features.includes(feature)}
+        onCheckedChange={(checked) => {
+          const newFeatures = checked
+            ? [...extendedFilters.features, feature]
+            : extendedFilters.features.filter(f => f !== feature);
+          handleFilterChange({ features: newFeatures });
+        }}
+        className="data-[state=checked]:bg-[#f74f4f] data-[state=checked]:border-[#f74f4f]"
+      />
+      <label htmlFor={`desktop-feature-${feature}`} className="text-sm cursor-pointer">
+        {feature}
+      </label>
+    </div>
+  ))}
+</div>
+</TabsContent>
+
+<TabsContent value="financial" className="p-4 border-0 mt-0">
+<div className="grid grid-cols-2 gap-8">
+  {/* Cap Rate */}
+  <div className="space-y-4">
+    <div className="flex items-center justify-between">
+      <Label className="text-sm font-medium">Minimum Cap Rate</Label>
+      <span className="text-sm font-medium">
+        {extendedFilters.capRateMin}%+
+      </span>
+    </div>
+    <RangeSlider
+      min={0}
+      max={15}
+      step={0.5}
+      value={[extendedFilters.capRateMin]}
+      onValueChange={(value) => {
+        handleFilterChange({
+          capRateMin: value[0]
+        });
+      }}
+      formatValue={formatPercent}
+      marks={[
+        { value: 0, label: '0%' },
+        { value: 5, label: '5%' },
+        { value: 10, label: '10%' },
+        { value: 15, label: '15%+' },
+      ]}
+    />
+  </div>
+  
+  {/* Occupancy Rate */}
+  <div className="space-y-4">
+    <div className="flex items-center justify-between">
+      <Label className="text-sm font-medium">Minimum Occupancy Rate</Label>
+      <span className="text-sm font-medium">
+        {extendedFilters.occupancyRateMin}%+
+      </span>
+    </div>
+    <RangeSlider
+      min={0}
+      max={100}
+      step={5}
+      value={[extendedFilters.occupancyRateMin]}
+      onValueChange={(value) => {
+        handleFilterChange({
+          occupancyRateMin: value[0]
+        });
+      }}
+      formatValue={formatPercent}
+      marks={[
+        { value: 0, label: '0%' },
+        { value: 50, label: '50%' },
+        { value: 100, label: '100%' },
+      ]}
+    />
+  </div>
+  
+  {/* Annual Revenue */}
+  <div className="space-y-4">
+    <div className="flex items-center justify-between">
+      <Label className="text-sm font-medium">Annual Revenue</Label>
+      <div className="text-xs text-gray-500">
+        {formatCurrency(extendedFilters.revenueMin)} - {formatCurrency(extendedFilters.revenueMax)}
       </div>
-    </TooltipProvider>
-  );
+    </div>
+    <RangeSlider
+      min={0}
+      max={5000000}
+      step={100000}
+      value={[extendedFilters.revenueMin, extendedFilters.revenueMax]}
+      onValueChange={(value) => {
+        handleFilterChange({
+          revenueMin: value[0],
+          revenueMax: value[1]
+        });
+      }}
+      formatValue={formatCurrency}
+    />
+  </div>
+  
+  {/* Date Listed */}
+  <div className="space-y-4">
+    <Label className="text-sm font-medium">Date Listed</Label>
+    <Select
+      value={extendedFilters.listedWithinDays?.toString() || ""}
+      onValueChange={(value) => {
+        handleFilterChange({
+          listedWithinDays: value ? parseInt(value) : null
+        });
+      }}
+    >
+      <SelectTrigger className="w-full">
+        <SelectValue placeholder="Any time" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="">Any time</SelectItem>
+        <SelectItem value="7">Last 7 days</SelectItem>
+        <SelectItem value="30">Last 30 days</SelectItem>
+        <SelectItem value="90">Last 90 days</SelectItem>
+        <SelectItem value="180">Last 6 months</SelectItem>
+      </SelectContent>
+    </Select>
+  </div>
+</div>
+</TabsContent>
+
+<TabsContent value="saved" className="p-4 border-0 mt-0">
+  {savedSearches.length > 0 ? (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">Your saved searches</p>
+      
+      {savedSearches.map((savedSearch, index) => (
+        <div key={index} className="flex items-center justify-between bg-gray-50 p-3 rounded-md hover:bg-gray-100">
+          <div>
+            <h4 className="font-medium text-sm">{savedSearch.name}</h4>
+            <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
+              <span>{savedSearch.count} properties</span>
+              <span>•</span>
+              <span>Updated {savedSearch.lastUpdated}</span>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 w-8 p-0">
+                  <Zap className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Apply this search</p>
+              </TooltipContent>
+            </Tooltip>
+            
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 w-8 p-0">
+                  <X className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Delete saved search</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+      ))}
+      
+      <Button variant="outline" size="sm" className="mt-2 w-full">
+        <Bookmark className="h-4 w-4 mr-2" />
+        Save current search
+      </Button>
+    </div>
+  ) : (
+    <div className="text-center py-8">
+      <Bookmark className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+      <h3 className="font-medium mb-1">No saved searches</h3>
+      <p className="text-sm text-gray-500 mb-4">Save your favorite searches for quick access later</p>
+      <Button 
+        variant="outline" 
+        size="sm"
+        onClick={saveCurrentFilter}
+        disabled={activeFilters.length === 0}
+      >
+        <Save className="mr-2 h-4 w-4" />
+        Save current search
+      </Button>
+    </div>
+  )}
+</TabsContent>
+</Tabs>
+</div>
+
+{/* Results */}
+<div className="mb-10">
+  {isLoading ? (
+    <div className="py-10 flex flex-col items-center justify-center">
+      <div className="w-10 h-10 border-4 border-[#f74f4f]/20 border-t-[#f74f4f] rounded-full animate-spin mb-4"></div>
+      <p className="text-muted-foreground">Searching for properties...</p>
+    </div>
+  ) : filteredListings.length === 0 ? (
+    <div className="bg-white rounded-lg border py-16 text-center">
+      <div className="mx-auto w-16 h-16 bg-[#f74f4f]/10 rounded-full flex items-center justify-center mb-4">
+        <Search className="h-8 w-8 text-[#f74f4f]" />
+      </div>
+      <h2 className="text-2xl font-bold mb-2">No listings found</h2>
+      <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+        We couldn't find any properties matching your criteria. Try adjusting your filters or search terms.
+      </p>
+      <Button onClick={clearFilters} className="bg-[#f74f4f] hover:bg-[#e43c3c]">
+        Clear all filters
+      </Button>
+    </div>
+  ) : view === 'grid' ? (
+    <motion.div 
+      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+    >
+      <AnimatePresence>
+        {filteredListings.map(listing => (
+          <motion.div 
+            key={listing.id} 
+            variants={itemVariants}
+            initial="hidden"
+            animate="visible"
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
+            layout
+          >
+            <ListingCard listing={listing} />
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </motion.div>
+  ) : (
+    <div className="relative h-[600px] bg-gray-100 rounded-lg border overflow-hidden">
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="text-center">
+          <Map className="h-10 w-10 text-gray-400 mb-2 mx-auto" />
+          <h3 className="font-medium mb-1">Map View</h3>
+          <p className="text-gray-500 text-sm">Interactive map would be displayed here</p>
+        </div>
+      </div>
+    </div>
+  )}
+</div>
+
+{/* Enhanced pagination with stats */}
+{filteredListings.length > 0 && (
+  <div className="flex flex-col md:flex-row justify-between items-center my-8">
+    <p className="text-sm text-gray-500 mb-4 md:mb-0">
+      Showing <span className="font-medium">{Math.min(1, filteredListings.length)}-{Math.min(12, filteredListings.length)}</span> of <span className="font-medium">{filteredListings.length}</span> properties
+    </p>
+    
+    <nav className="inline-flex rounded-md shadow-sm">
+      <Button variant="outline" size="sm" className="rounded-r-none">
+        Previous
+      </Button>
+      <Button variant="outline" size="sm" className="rounded-none border-l-0 bg-[#f74f4f] text-white border-[#f74f4f]">
+        1
+      </Button>
+      <Button variant="outline" size="sm" className="rounded-none border-l-0">
+        2
+      </Button>
+      <Button variant="outline" size="sm" className="rounded-none border-l-0">
+        3
+      </Button>
+      <Button variant="outline" size="sm" className="rounded-l-none border-l-0">
+        Next
+      </Button>
+    </nav>
+  </div>
+)}
+</div>
+
+{/* Enhanced CTA Section */}
+<div className="bg-[#2d3748] py-12 mt-auto">
+  <div className="container mx-auto px-4">
+    <div className="bg-gradient-to-r from-[#f74f4f] to-[#ff7a45] rounded-xl p-8 md:p-10 shadow-lg relative overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden opacity-20">
+        <div className="absolute top-10 right-10 w-40 h-40 bg-white rounded-full blur-3xl"></div>
+        <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-white rounded-full blur-3xl"></div>
+      </div>
+      
+      <div className="max-w-3xl mx-auto text-center relative z-10">
+        <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">Looking for a specific RV park?</h2>
+        <p className="text-white/90 mb-8 text-lg">
+          Tell us what you're looking for and we'll help you find the perfect property. Join our buyers list for early access to new listings.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
+          <Input
+            placeholder="Email address"
+            className="bg-white/90 border-0 focus:ring-2 focus:ring-white text-gray-800 placeholder-gray-500 h-12"
+          />
+          <Button className="bg-white text-[#f74f4f] hover:bg-gray-100 h-12 px-6">
+            Join Buyer List
+          </Button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<Footer />
+</div>
+</TooltipProvider>
+);
 };
 
 export default Listings;
-                
