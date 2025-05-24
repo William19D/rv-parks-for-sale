@@ -1,12 +1,16 @@
+
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useAuth } from "@/hooks/useAuth";
 import { 
   Menu, 
   X, 
   ChevronDown, 
   Search,
-  Home
+  Home,
+  User,
+  LogOut
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
@@ -47,6 +51,7 @@ export const HeaderSpacer = () => {
 
 export const Header = () => {
   const isMobile = useIsMobile();
+  const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
@@ -90,6 +95,11 @@ export const Header = () => {
       dropdown: null,
     }
   ];
+
+  const handleSignOut = async () => {
+    await signOut();
+    setMenuOpen(false);
+  };
 
   return (
     <header 
@@ -155,10 +165,39 @@ export const Header = () => {
                       ))}
                       
                       <div className="pt-2 mt-2 border-t border-gray-200">
+                        {user ? (
+                          <div className="space-y-2">
+                            <div className="text-sm text-gray-600 px-3 py-2">
+                              Hola, {user.email}
+                            </div>
+                            <Button 
+                              variant="outline" 
+                              className="w-full"
+                              onClick={handleSignOut}
+                            >
+                              <LogOut className="h-4 w-4 mr-2" />
+                              Cerrar Sesión
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <Link to="/login" onClick={() => setMenuOpen(false)}>
+                              <Button variant="outline" className="w-full">
+                                Iniciar Sesión
+                              </Button>
+                            </Link>
+                            <Link to="/register" onClick={() => setMenuOpen(false)}>
+                              <Button className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]">
+                                Registrarse
+                              </Button>
+                            </Link>
+                          </div>
+                        )}
+                        
                         <Link to="/listings/new" onClick={() => setMenuOpen(false)}>
                           <Button 
                             variant="default" 
-                            className="w-full bg-[#f74f4f] hover:bg-[#e43c3c] hover:shadow-md transition-all"
+                            className="w-full mt-2 bg-[#f74f4f] hover:bg-[#e43c3c] hover:shadow-md transition-all"
                           >
                             List Your Property
                           </Button>
@@ -187,7 +226,39 @@ export const Header = () => {
                 </div>
               ))}
               
-              <div className="ml-2">
+              <div className="ml-4 flex items-center space-x-2">
+                {user ? (
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-gray-600">
+                      Hola, {user.email?.split('@')[0]}
+                    </span>
+                    <Button 
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleSignOut}
+                      className="text-gray-600 hover:text-[#f74f4f]"
+                    >
+                      <LogOut className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <Link to="/login">
+                      <Button variant="ghost" size="sm">
+                        Iniciar Sesión
+                      </Button>
+                    </Link>
+                    <Link to="/register">
+                      <Button 
+                        size="sm"
+                        className="bg-[#f74f4f] hover:bg-[#e43c3c]"
+                      >
+                        Registrarse
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+                
                 <Link to="/listings/new">
                   <Button 
                     variant="default"
