@@ -1,4 +1,3 @@
-
 export interface Listing {
   id: string;
   title: string;
@@ -18,6 +17,7 @@ export interface Listing {
   images: string[];
   videoUrl?: string;
   broker: {
+    avatar: string;
     name: string;
     phone: string;
     email: string;
@@ -53,6 +53,7 @@ export const mockListings: Listing[] = [
     ],
     videoUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
     broker: {
+      avatar: "https://randomuser.me/api/portraits/men/32.jpg",
       name: "John Smith",
       phone: "512-555-1234",
       email: "john@rvbrokers.com",
@@ -83,6 +84,7 @@ export const mockListings: Listing[] = [
       "/placeholder.svg"
     ],
     broker: {
+      avatar: "https://randomuser.me/api/portraits/women/45.jpg",
       name: "Sarah Johnson",
       phone: "303-555-6789",
       email: "sarah@parkbrokers.com",
@@ -114,6 +116,7 @@ export const mockListings: Listing[] = [
       "/placeholder.svg"
     ],
     broker: {
+      avatar: "https://randomuser.me/api/portraits/men/65.jpg",
       name: "Michael Brown",
       phone: "480-555-9876",
       email: "mike@rvresortbrokers.com",
@@ -145,6 +148,7 @@ export const mockListings: Listing[] = [
       "/placeholder.svg"
     ],
     broker: {
+      avatar: "https://randomuser.me/api/portraits/women/28.jpg",
       name: "Amanda Wilson",
       phone: "843-555-3456",
       email: "amanda@coastalrvbrokers.com",
@@ -175,6 +179,7 @@ export const mockListings: Listing[] = [
       "/placeholder.svg"
     ],
     broker: {
+      avatar: "https://randomuser.me/api/portraits/men/42.jpg",
       name: "Robert Chen",
       phone: "828-555-7890",
       email: "robert@mountainproperties.com",
