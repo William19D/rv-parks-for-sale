@@ -157,6 +157,39 @@ const ListingDetail = () => {
           <div className="space-y-6">
             <ContactForm listing={listing} />
             
+            {/* RoverPass CTA for new owners */}
+            <div className="bg-roverpass-purple p-6 rounded-lg text-white">
+              <h3 className="text-lg font-bold mb-2">Planning to Buy This RV Park?</h3>
+              <p className="text-sm text-white/80 mb-4">
+                Streamline your operations from day one with RoverPass's comprehensive reservation management system.
+              </p>
+              <div className="space-y-2 mb-4">
+                <div className="flex items-center text-sm">
+                  <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                  Online reservation system
+                </div>
+                <div className="flex items-center text-sm">
+                  <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                  Revenue optimization tools
+                </div>
+                <div className="flex items-center text-sm">
+                  <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                  Guest management platform
+                </div>
+              </div>
+              <Button asChild className="w-full bg-white text-roverpass-purple hover:bg-gray-100">
+                <a href="https://roverpass.com/demo" target="_blank" rel="noopener noreferrer">
+                  Schedule a Demo
+                </a>
+              </Button>
+            </div>
+            
             {/* Call to action for brokers */}
             <div className="bg-gray-50 p-6 rounded-lg">
               <h3 className="text-lg font-bold mb-2">Are You a Broker?</h3>

@@ -45,6 +45,15 @@ export const Header = () => {
                   >
                     RV Parks For Sale
                   </Link>
+                  <a 
+                    href="https://roverpass.com" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="hover:text-roverpass-purple"
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    Reservation System
+                  </a>
                   <Link 
                     to="/broker/dashboard" 
                     className="hover:text-roverpass-purple"
@@ -69,6 +78,9 @@ export const Header = () => {
           <nav className="hidden md:flex items-center space-x-8">
             <Link to="/" className="hover:text-roverpass-purple">Home</Link>
             <Link to="/listings" className="hover:text-roverpass-purple">RV Parks For Sale</Link>
+            <a href="https://roverpass.com" target="_blank" rel="noopener noreferrer" className="hover:text-roverpass-purple">
+              Reservation System
+            </a>
             <Link to="/broker/dashboard" className="hover:text-roverpass-purple">Broker Dashboard</Link>
             <Link to="/listings/new">
               <Button variant="default">List Your Property</Button>

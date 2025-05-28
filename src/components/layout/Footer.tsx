@@ -5,7 +5,7 @@ export const Footer = () => {
   return (
     <footer className="bg-gray-100 pt-12 pb-8">
       <div className="container mx-auto px-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
           <div>
             <h3 className="text-lg font-bold mb-4">RV Parks For Sale</h3>
             <ul className="space-y-2">
@@ -16,12 +16,21 @@ export const Footer = () => {
             </ul>
           </div>
           <div>
+            <h3 className="text-lg font-bold mb-4">RoverPass Platform</h3>
+            <ul className="space-y-2">
+              <li><a href="https://roverpass.com" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-roverpass-purple">Reservation System</a></li>
+              <li><a href="https://roverpass.com/features" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-roverpass-purple">Features</a></li>
+              <li><a href="https://roverpass.com/pricing" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-roverpass-purple">Pricing</a></li>
+              <li><a href="https://roverpass.com/demo" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-roverpass-purple">Request Demo</a></li>
+            </ul>
+          </div>
+          <div>
             <h3 className="text-lg font-bold mb-4">Resources</h3>
             <ul className="space-y-2">
               <li><Link to="#" className="text-gray-600 hover:text-roverpass-purple">Buying Guide</Link></li>
               <li><Link to="#" className="text-gray-600 hover:text-roverpass-purple">Listing Guide</Link></li>
-              <li><Link to="#" className="text-gray-600 hover:text-roverpass-purple">RV Park Industry</Link></li>
-              <li><Link to="#" className="text-gray-600 hover:text-roverpass-purple">About RoverPass</Link></li>
+              <li><a href="https://roverpass.com/blog" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-roverpass-purple">RV Park Industry</a></li>
+              <li><a href="https://roverpass.com/about" target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-roverpass-purple">About RoverPass</a></li>
             </ul>
           </div>
           <div>
