@@ -277,14 +277,14 @@ export const Header = memo(() => {
               handleNavigation("/");
             }}
           >
-            {/* Logo Area */}
-            <div className="w-48 h-12 flex items-center mr-4">
-              <img 
-                src="logo.svg" 
-                alt="RoverPass Logo" 
-                className="w-full h-full object-contain group-hover:opacity-80 transition-opacity duration-300" 
-              />
-            </div>
+                      {/* Logo Area - CORREGIDO CON RUTA ABSOLUTA */}
+          <div className="w-48 h-12 flex items-center mr-4">
+            <img 
+              src="/logo.svg" 
+              alt="RoverPass Logo" 
+              className="w-full h-full object-contain group-hover:opacity-80 transition-opacity duration-300" 
+            />
+          </div>
           </Link>
         </div>
 
