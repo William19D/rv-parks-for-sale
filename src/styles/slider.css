@@ -1,0 +1,15 @@
+.radix-slider-thumb {
+  @apply block h-5 w-5 rounded-full border-2 border-[#f74f4f] bg-white shadow-md
+    hover:bg-[#f74f4f]/10 focus:outline-none focus:ring-2 focus:ring-[#f74f4f]
+    focus:ring-offset-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50;
+}
+
+/* Styling for the slider track */
+.radix-slider-track {
+  @apply relative h-2 w-full grow overflow-hidden rounded-full bg-gray-200;
+}
+
+/* Styling for the selected range within the slider */
+.radix-slider-range {
+  @apply absolute h-full bg-[#f74f4f];
+}
