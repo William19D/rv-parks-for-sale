@@ -116,14 +116,16 @@ const Register = () => {
     setLoading(true);
 
     try {
-      // Register with Supabase and include phone number in metadata
+      // Primer paso: Registro con metadatos
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             phone_number: phone
-          }
+          },
+          // 👇 Esto es importante para asegurarnos de que se guarden los metadatos
+          emailRedirectTo: `${window.location.origin}/login`
         }
       });
 
@@ -134,17 +136,41 @@ const Register = () => {
           variant: "destructive",
         });
       } else {
-        // Check if email confirmation is required
-        if (data.user && data.user.identities && data.user.identities.length === 0) {
-          toast({
-            title: "Email already registered",
-            description: "This email is already registered. Please login or use a different email.",
-            variant: "destructive",
-          });
+        // Comprobamos si el usuario se creó correctamente
+        if (data.user) {
+          // Verificamos si ya existe (para detectar emails ya registrados)
+          if (data.user.identities && data.user.identities.length === 0) {
+            toast({
+              title: "Email already registered",
+              description: "This email is already registered. Please login or use a different email.",
+              variant: "destructive",
+            });
+          } else {
+            // Segundo paso: Asegurar que se guarden los metadatos con una actualización explícita
+            // Esto es una protección adicional por si la primera vez no se guardó bien
+            if (data.session) {
+              const { error: updateError } = await supabase.auth.updateUser({
+                data: { phone_number: phone }
+              });
+              
+              if (updateError) {
+                console.error("Error updating user metadata:", updateError);
+              }
+            }
+            
+            // Guardar en el almacenamiento local para uso posterior
+            localStorage.setItem('userPhone', phone);
+            
+            toast({
+              title: "Registration successful!",
+              description: "Check your email to confirm your account",
+            });
+            navigate("/login");
+          }
         } else {
           toast({
-            title: "Registration successful!",
-            description: "Check your email to confirm your account",
+            title: "Registration issue",
+            description: "Account created but user data not available. Please try logging in.",
           });
           navigate("/login");
         }
@@ -161,6 +187,7 @@ const Register = () => {
     }
   };
 
+  // Resto del componente igual
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
