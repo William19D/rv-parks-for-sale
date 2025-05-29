@@ -1,26 +1,29 @@
-import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect, useRef, memo, useMemo } from "react";
+import { Link, useNavigate, useLocation, NavLink } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/hooks/useAuth";
 import { 
   Menu, 
   X, 
-  ChevronDown, 
-  Search,
-  Home,
   User,
-  LogOut
+  LogOut,
+  PlusCircle,
+  LucideIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
 
-// Importa tu logo aquí
-import logoImage from "@/assets/logo.svg"; // Ajusta la ruta a donde tengas tu logo
+// Definir el tipo para los elementos de navegación
+interface NavItem {
+  name: string;
+  path: string;
+  dropdown: null | string;
+  icon?: LucideIcon;
+}
 
 // Component for spacing that matches the header height
-export const HeaderSpacer = () => {
+export const HeaderSpacer = memo(() => {
   const [headerHeight, setHeaderHeight] = useState<number>(0);
   
   useEffect(() => {
@@ -49,16 +52,236 @@ export const HeaderSpacer = () => {
   }, []);
   
   return <div style={{ height: `${headerHeight}px` }}></div>;
-};
+});
 
-export const Header = () => {
+// Componente memoizado para cada elemento de navegación
+const NavItemComponent = memo(({ item, closeDropdowns }: { 
+  item: NavItem, 
+  closeDropdowns: () => void 
+}) => {
+  const handleClick = () => {
+    closeDropdowns();
+    window.scrollTo({
+      top: 0,
+      behavior: "instant"
+    });
+  };
+
+  return (
+    <div className="relative group">
+      <NavLink
+        to={item.path}
+        className={({ isActive }) => cn(
+          "px-2 py-2 text-sm font-medium transition-colors flex items-center",
+          isActive ? "text-[#f74f4f]" : "text-gray-700 hover:text-[#f74f4f]"
+        )}
+        onClick={handleClick}
+      >
+        {item.icon && <item.icon className="h-4 w-4 mr-1 text-current" />}
+        {item.name}
+        <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-[#f74f4f] group-hover:w-full transition-all duration-300"></span>
+      </NavLink>
+    </div>
+  );
+});
+
+// Componente memoizado para el menú móvil
+const MobileNavItem = memo(({ item, setMenuOpen }: { 
+  item: NavItem, 
+  setMenuOpen: (isOpen: boolean) => void 
+}) => {
+  const handleClick = () => {
+    setMenuOpen(false);
+    window.scrollTo({
+      top: 0,
+      behavior: "instant"
+    });
+  };
+
+  return (
+    <div>
+      <NavLink
+        to={item.path}
+        className={({ isActive }) => cn(
+          "flex items-center py-2 px-3 rounded-md group",
+          isActive ? "bg-gray-100 text-[#f74f4f]" : "hover:bg-gray-100"
+        )}
+        onClick={handleClick}
+      >
+        {item.icon && <item.icon className="h-4 w-4 mr-2 text-current" />}
+        <span className={cn(
+          "transition-colors",
+          "group-hover:text-[#f74f4f]"
+        )}>
+          {item.name}
+        </span>
+      </NavLink>
+    </div>
+  );
+});
+
+// Componente para la sección de autenticación (memoizado)
+const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
+  user: any;
+  loading: boolean;
+  signOut: () => Promise<void>;
+  isMobile: boolean;
+  setMenuOpen: (isOpen: boolean) => void;
+}) => {
+  // Función para obtener nombre de usuario de diversas fuentes
+  const userName = useMemo(() => {
+    if (!user) return "";
+    
+    // Try to get name from user metadata first
+    const firstName = user.user_metadata?.first_name;
+    const lastName = user.user_metadata?.last_name;
+    
+    if (firstName && lastName) {
+      return `${firstName} ${lastName}`;
+    }
+    
+    // If not in metadata, try localStorage
+    const storedFirstName = localStorage.getItem('userFirstName');
+    const storedLastName = localStorage.getItem('userLastName');
+    
+    if (storedFirstName && storedLastName) {
+      return `${storedFirstName} ${storedLastName}`;
+    }
+    
+    // Fall back to email if no name is available
+    return user.email?.split('@')[0] || "";
+  }, [user]);
+  
+  const handleSignOut = async () => {
+    window.scrollTo({
+      top: 0,
+      behavior: "instant"
+    });
+    await signOut();
+    setMenuOpen(false);
+  };
+
+  if (loading) {
+    return <div className="animate-pulse h-8 w-20 bg-gray-200 rounded"></div>;
+  }
+  
+  if (user) {
+    return (
+      <>
+        {/* Contenido para usuario autenticado */}
+        {isMobile ? (
+          <div className="space-y-2">
+            <div className="text-sm text-gray-600 px-3 py-2">
+              <div className="flex items-center space-x-2">
+                <User className="h-4 w-4" />
+                <span>Hello, <span className="font-medium">{userName || user.email?.split('@')[0]}</span></span>
+              </div>
+            </div>
+            <Button 
+              variant="outline" 
+              className="w-full"
+              onClick={handleSignOut}
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Sign Out
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center bg-gray-100 rounded-full p-2">
+              <User className="h-4 w-4 text-gray-600 mr-2" />
+              <span className="text-sm font-medium text-gray-700">
+                {userName || user.email?.split('@')[0]}
+              </span>
+            </div>
+            <Button 
+              variant="ghost"
+              size="sm"
+              onClick={handleSignOut}
+              className="text-gray-600 hover:text-[#f74f4f]"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </>
+    );
+  } else {
+    return (
+      <>
+        {/* Contenido para usuario no autenticado */}
+        {isMobile ? (
+          <div className="space-y-2">
+            <Link 
+              to="/login" 
+              onClick={() => { 
+                setMenuOpen(false);
+                window.scrollTo({ top: 0, behavior: "instant" }); 
+              }}
+            >
+              <Button variant="outline" className="w-full">
+                Sign In
+              </Button>
+            </Link>
+            <Link 
+              to="/register" 
+              onClick={() => { 
+                setMenuOpen(false);
+                window.scrollTo({ top: 0, behavior: "instant" }); 
+              }}
+            >
+              <Button className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]">
+                Register
+              </Button>
+            </Link>
+          </div>
+        ) : (
+          <div className="flex items-center space-x-2">
+            <Link 
+              to="/login" 
+              onClick={() => window.scrollTo({ top: 0, behavior: "instant" })}
+            >
+              <Button variant="ghost" size="sm">
+                Sign In
+              </Button>
+            </Link>
+            <Link 
+              to="/register" 
+              onClick={() => window.scrollTo({ top: 0, behavior: "instant" })}
+            >
+              <Button 
+                size="sm"
+                className="bg-[#f74f4f] hover:bg-[#e43c3c]"
+              >
+                Register
+              </Button>
+            </Link>
+          </div>
+        )}
+      </>
+    );
+  }
+});
+
+// Componente Header memoizado para prevenir re-renderizados innecesarios
+export const Header = memo(() => {
   const isMobile = useIsMobile();
-  const { user, signOut } = useAuth();
+  const { user, signOut, loading } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-
+  const location = useLocation();
+  
+  // Monitor de cambios de ruta para scroll al inicio
+  useEffect(() => {
+    // Cuando cambia la ruta, hacer scroll al inicio
+    window.scrollTo({
+      top: 0,
+      behavior: "instant"
+    });
+  }, [location.pathname]);
+  
+  // Manejar el desplazamiento
   useEffect(() => {
     const handleScroll = () => {
       const isScrolled = window.scrollY > 20;
@@ -71,44 +294,67 @@ export const Header = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [scrolled]);
 
-  const toggleDropdown = (dropdown: string) => {
-    setActiveDropdown(activeDropdown === dropdown ? null : dropdown);
-  };
+  // Memoización de los elementos de navegación para evitar re-renderizados
+  const navItemsState = useMemo(() => {
+    // Base navigation items available to all users
+    const baseNavItems: NavItem[] = [
+      {
+        name: "Home",
+        path: "/",
+        dropdown: null,
+      },
+      {
+        name: "RV Parks For Sale",
+        path: "/listings",
+        dropdown: null,
+      },
+    ];
+    
+    // Items solo para usuarios autenticados
+    if (user) {
+      baseNavItems.push(
+        {
+          name: "Add Listing",
+          path: "/listings/new",
+          dropdown: null,
+          icon: PlusCircle
+        },
+        {
+          name: "Broker Dashboard",
+          path: "/broker/dashboard",
+          dropdown: null,
+        }
+      );
+    }
+    
+    return baseNavItems;
+  }, [user]); // Solo recalcular cuando cambia el usuario
 
   const closeDropdowns = () => {
     setActiveDropdown(null);
   };
 
-  // Base navigation items available to all users
-  const baseNavItems = [
-    {
-      name: "Home",
-      path: "/",
-      dropdown: null,
-    },
-    {
-      name: "RV Parks For Sale",
-      path: "/listings",
-      dropdown: null,
-    },
-  ];
-  
-  // Broker Dashboard only for logged-in users
-  const brokerDashboardItem = {
-    name: "Broker Dashboard",
-    path: "/broker/dashboard",
-    dropdown: null,
-  };
-  
-  // Add Broker Dashboard to nav items only if user is logged in
-  const navItems = user 
-    ? [...baseNavItems, brokerDashboardItem] 
-    : [...baseNavItems];
+  // Memoizar los ítems de navegación para evitar re-renderizado
+  const desktopNavItems = useMemo(() => 
+    navItemsState.map(item => (
+      <NavItemComponent
+        key={item.name}
+        item={item}
+        closeDropdowns={closeDropdowns}
+      />
+    ))
+  , [navItemsState]);
 
-  const handleSignOut = async () => {
-    await signOut();
-    setMenuOpen(false);
-  };
+  // Memoizar los ítems de navegación móvil
+  const mobileNavItems = useMemo(() => 
+    navItemsState.map(item => (
+      <MobileNavItem
+        key={item.name}
+        item={item}
+        setMenuOpen={setMenuOpen}
+      />
+    ))
+  , [navItemsState]);
 
   return (
     <header 
@@ -122,18 +368,24 @@ export const Header = () => {
     >
       <div className="container mx-auto px-4 flex items-center justify-between">
         <div className="flex items-center">
-          <Link to="/" className="flex items-center group" onClick={closeDropdowns}>
-            {/* Logo Area - Puedes elegir UNA de estas opciones */}
+          <Link 
+            to="/" 
+            className="flex items-center group" 
+            onClick={() => {
+              closeDropdowns();
+              window.scrollTo({
+                top: 0,
+                behavior: "instant"
+              });
+            }}
+          >
+            {/* Logo Area */}
             <div className="w-48 h-12 flex items-center mr-4">
-              
-              { 
-              // Opción 2: Usar una ruta pública (si tu logo está en la carpeta "public")
               <img 
-                src="logo.svg" 
+                src="/logo.svg" 
                 alt="RoverPass Logo" 
                 className="w-full h-full object-contain group-hover:opacity-80 transition-opacity duration-300" 
               />
-              }
             </div>
           </Link>
         </div>
@@ -166,47 +418,16 @@ export const Header = () => {
                 >
                   <div className="p-4">
                     <div className="flex flex-col space-y-3">
-                      {navItems.map((item) => (
-                        <div key={item.name}>
-                          <Link
-                            to={item.path}
-                            className="flex items-center py-2 px-3 rounded-md hover:bg-gray-100 group"
-                            onClick={() => setMenuOpen(false)}
-                          >
-                            <span className="text-gray-700 group-hover:text-[#f74f4f] transition-colors">{item.name}</span>
-                          </Link>
-                        </div>
-                      ))}
+                      {mobileNavItems}
                       
                       <div className="pt-2 mt-2 border-t border-gray-200">
-                        {user ? (
-                          <div className="space-y-2">
-                            <div className="text-sm text-gray-600 px-3 py-2">
-                              Hello, {user.email}
-                            </div>
-                            <Button 
-                              variant="outline" 
-                              className="w-full"
-                              onClick={handleSignOut}
-                            >
-                              <LogOut className="h-4 w-4 mr-2" />
-                              Sign Out
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <Link to="/login" onClick={() => setMenuOpen(false)}>
-                              <Button variant="outline" className="w-full">
-                                Sign In
-                              </Button>
-                            </Link>
-                            <Link to="/register" onClick={() => setMenuOpen(false)}>
-                              <Button className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]">
-                                Register
-                              </Button>
-                            </Link>
-                          </div>
-                        )}
+                        <AuthSection
+                          user={user}
+                          loading={loading}
+                          signOut={signOut}
+                          isMobile={isMobile}
+                          setMenuOpen={setMenuOpen}
+                        />
                       </div>
                     </div>
                   </div>
@@ -217,52 +438,16 @@ export const Header = () => {
         ) : (
           <div className="hidden md:flex items-center space-x-1">
             <nav className="flex items-center space-x-6">
-              {navItems.map((item) => (
-                <div key={item.name} className="relative group">
-                  <Link
-                    to={item.path}
-                    className="px-2 py-2 text-sm font-medium text-gray-700 hover:text-[#f74f4f] transition-colors"
-                    onClick={closeDropdowns}
-                  >
-                    {item.name}
-                  </Link>
-                  {/* Hover underline animation */}
-                  <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-[#f74f4f] group-hover:w-full transition-all duration-300"></span>
-                </div>
-              ))}
+              {desktopNavItems}
               
               <div className="ml-4 flex items-center space-x-2">
-                {user ? (
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm text-gray-600">
-                      Hello, {user.email?.split('@')[0]}
-                    </span>
-                    <Button 
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleSignOut}
-                      className="text-gray-600 hover:text-[#f74f4f]"
-                    >
-                      <LogOut className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center space-x-2">
-                    <Link to="/login">
-                      <Button variant="ghost" size="sm">
-                        Sign In
-                      </Button>
-                    </Link>
-                    <Link to="/register">
-                      <Button 
-                        size="sm"
-                        className="bg-[#f74f4f] hover:bg-[#e43c3c]"
-                      >
-                        Register
-                      </Button>
-                    </Link>
-                  </div>
-                )}
+                <AuthSection
+                  user={user}
+                  loading={loading}
+                  signOut={signOut}
+                  isMobile={isMobile}
+                  setMenuOpen={setMenuOpen}
+                />
               </div>
             </nav>
           </div>
@@ -270,4 +455,4 @@ export const Header = () => {
       </div>
     </header>
   );
-};
+});
