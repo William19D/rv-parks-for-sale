@@ -16,6 +16,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
+// Importa tu logo aquí
+import logoImage from "@/assets/logo.svg"; // Ajusta la ruta a donde tengas tu logo
+
 // Component for spacing that matches the header height
 export const HeaderSpacer = () => {
   const [headerHeight, setHeaderHeight] = useState<number>(0);
@@ -76,8 +79,8 @@ export const Header = () => {
     setActiveDropdown(null);
   };
 
-  // Simplified navigation items as per the image
-  const navItems = [
+  // Base navigation items available to all users
+  const baseNavItems = [
     {
       name: "Home",
       path: "/",
@@ -88,12 +91,19 @@ export const Header = () => {
       path: "/listings",
       dropdown: null,
     },
-    {
-      name: "Broker Dashboard",
-      path: "/broker/dashboard",
-      dropdown: null,
-    }
   ];
+  
+  // Broker Dashboard only for logged-in users
+  const brokerDashboardItem = {
+    name: "Broker Dashboard",
+    path: "/broker/dashboard",
+    dropdown: null,
+  };
+  
+  // Add Broker Dashboard to nav items only if user is logged in
+  const navItems = user 
+    ? [...baseNavItems, brokerDashboardItem] 
+    : [...baseNavItems];
 
   const handleSignOut = async () => {
     await signOut();
@@ -102,7 +112,7 @@ export const Header = () => {
 
   return (
     <header 
-      id="main-header" // ID to reference from HeaderSpacer
+      id="main-header"
       className={cn(
         "fixed top-0 w-full z-50 transition-all duration-300 ease-in-out",
         scrolled 
@@ -113,12 +123,17 @@ export const Header = () => {
       <div className="container mx-auto px-4 flex items-center justify-between">
         <div className="flex items-center">
           <Link to="/" className="flex items-center group" onClick={closeDropdowns}>
-            {/* Logo space */}
+            {/* Logo Area - Puedes elegir UNA de estas opciones */}
             <div className="w-48 h-12 flex items-center mr-4">
-              {/* You can replace this div with your actual logo image */}
-              <span className="text-2xl font-bold text-[#f74f4f] group-hover:opacity-80 transition-colors duration-300">
-                RoverPass
-              </span>
+              
+              { 
+              // Opción 2: Usar una ruta pública (si tu logo está en la carpeta "public")
+              <img 
+                src="logo.svg" 
+                alt="RoverPass Logo" 
+                className="w-full h-full object-contain group-hover:opacity-80 transition-opacity duration-300" 
+              />
+              }
             </div>
           </Link>
         </div>

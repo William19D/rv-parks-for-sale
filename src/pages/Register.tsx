@@ -1,5 +1,4 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,9 +12,28 @@ const Register = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Format phone number as user types
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Get only the digits
+    const digits = e.target.value.replace(/\D/g, '');
+    
+    // Format the phone number as (XXX) XXX-XXXX
+    let formattedPhone = '';
+    if (digits.length <= 3) {
+      formattedPhone = digits.length ? `(${digits}` : '';
+    } else if (digits.length <= 6) {
+      formattedPhone = `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    } else {
+      formattedPhone = `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+    }
+    
+    setPhone(formattedPhone);
+  };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,13 +92,39 @@ const Register = () => {
       });
       return;
     }
+    
+    // Validate US phone number format
+    const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+    if (!phone) {
+      toast({
+        title: "Required Field",
+        description: "Please enter your phone number",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!phoneRegex.test(phone)) {
+      toast({
+        title: "Invalid Phone",
+        description: "Please enter a valid phone number in the format (XXX) XXX-XXXX",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signUp({
+      // Register with Supabase and include phone number in metadata
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          data: {
+            phone_number: phone
+          }
+        }
       });
 
       if (error) {
@@ -90,11 +134,20 @@ const Register = () => {
           variant: "destructive",
         });
       } else {
-        toast({
-          title: "Registration successful!",
-          description: "Check your email to confirm your account",
-        });
-        navigate("/login");
+        // Check if email confirmation is required
+        if (data.user && data.user.identities && data.user.identities.length === 0) {
+          toast({
+            title: "Email already registered",
+            description: "This email is already registered. Please login or use a different email.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Registration successful!",
+            description: "Check your email to confirm your account",
+          });
+          navigate("/login");
+        }
       }
     } catch (error) {
       console.error('Registration error:', error);
@@ -131,6 +184,17 @@ const Register = () => {
                   placeholder="your@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="phone">Phone Number (US Format)</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  placeholder="(123) 456-7890"
+                  value={phone}
+                  onChange={handlePhoneChange}
+                  maxLength={14}
                 />
               </div>
               <div>
