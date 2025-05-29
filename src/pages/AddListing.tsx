@@ -1,16 +1,19 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { Header } from "@/components/layout/Header";
+import { Header, HeaderSpacer } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { Upload, DollarSign, MapPin, Home, PercentSquare, ArrowLeft } from "lucide-react";
+import { Link } from "react-router-dom";
+import { states } from "@/data/mockListings";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const listingSchema = z.object({
   title: z.string().min(5, { message: "Title must be at least 5 characters" }),
@@ -80,20 +83,31 @@ const AddListing = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
+      <HeaderSpacer />
       
-      <div className="flex-grow py-8 bg-gray-50">
-        <div className="container mx-auto px-4">
-          <div className="max-w-3xl mx-auto bg-white rounded-lg p-6 shadow-sm">
-            <h1 className="text-3xl font-bold mb-6">List Your RV Park</h1>
-            <p className="text-muted-foreground mb-6">
-              Complete the form below to add your RV park to our listings. 
-              All listings are reviewed before being published.
-            </p>
-            
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <div className="container mx-auto px-4 py-6">
+        <Link 
+          to="/broker/dashboard" 
+          className="inline-flex items-center mb-6 text-[#f74f4f] hover:underline text-sm font-medium"
+        >
+          <ArrowLeft className="h-4 w-4 mr-1" />
+          Back to Dashboard
+        </Link>
+        
+        <div className="max-w-3xl mx-auto bg-white rounded-xl p-8 shadow-sm border border-gray-200">
+          <h1 className="text-2xl font-bold mb-2">List Your RV Park</h1>
+          <p className="text-gray-500 mb-6">
+            Complete the form below to add your RV park to our listings. 
+            All listings are reviewed before being published.
+          </p>
+          
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <div className="space-y-4">
+                <h2 className="text-lg font-medium border-b pb-2">Basic Information</h2>
+                
                 <FormField
                   control={form.control}
                   name="title"
@@ -101,7 +115,10 @@ const AddListing = () => {
                     <FormItem>
                       <FormLabel>Listing Title</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g. Scenic Mountain RV Park - 50 Sites" {...field} />
+                        <div className="relative">
+                          <Input placeholder="e.g. Scenic Mountain RV Park - 50 Sites" className="pl-9" {...field} />
+                          <Home className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        </div>
                       </FormControl>
                       <FormDescription>
                         Create a descriptive title for your property
@@ -118,7 +135,10 @@ const AddListing = () => {
                     <FormItem>
                       <FormLabel>Asking Price ($)</FormLabel>
                       <FormControl>
-                        <Input placeholder="1000000" {...field} />
+                        <div className="relative">
+                          <Input placeholder="1000000" className="pl-9" {...field} />
+                          <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        </div>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -133,7 +153,10 @@ const AddListing = () => {
                       <FormItem>
                         <FormLabel>City</FormLabel>
                         <FormControl>
-                          <Input placeholder="City" {...field} />
+                          <div className="relative">
+                            <Input placeholder="City" className="pl-9" {...field} />
+                            <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          </div>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -147,13 +170,29 @@ const AddListing = () => {
                       <FormItem>
                         <FormLabel>State</FormLabel>
                         <FormControl>
-                          <Input placeholder="State" {...field} />
+                          <Select 
+                            onValueChange={field.onChange} 
+                            defaultValue={field.value}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select state" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {states.map((state) => (
+                                <SelectItem key={state} value={state}>{state}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 </div>
+              </div>
+              
+              <div className="space-y-4">
+                <h2 className="text-lg font-medium border-b pb-2">Business Details</h2>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <FormField
@@ -177,7 +216,10 @@ const AddListing = () => {
                       <FormItem>
                         <FormLabel>Occupancy Rate (%)</FormLabel>
                         <FormControl>
-                          <Input placeholder="75" {...field} />
+                          <div className="relative">
+                            <Input placeholder="75" className="pl-9" {...field} />
+                            <PercentSquare className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          </div>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -193,7 +235,10 @@ const AddListing = () => {
                       <FormItem>
                         <FormLabel>Annual Revenue ($)</FormLabel>
                         <FormControl>
-                          <Input placeholder="250000" {...field} />
+                          <div className="relative">
+                            <Input placeholder="250000" className="pl-9" {...field} />
+                            <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          </div>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -207,52 +252,69 @@ const AddListing = () => {
                       <FormItem>
                         <FormLabel>Cap Rate (%)</FormLabel>
                         <FormControl>
-                          <Input placeholder="8.5" {...field} />
+                          <div className="relative">
+                            <Input placeholder="8.5" className="pl-9" {...field} />
+                            <PercentSquare className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          </div>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 </div>
+              </div>
+              
+              <div className="space-y-4">
+                <h2 className="text-lg font-medium border-b pb-2">Property Description</h2>
                 
                 <FormField
                   control={form.control}
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Property Description</FormLabel>
+                      <FormLabel>Detailed Description</FormLabel>
                       <FormControl>
                         <Textarea 
                           placeholder="Provide a detailed description of your property..." 
-                          className="min-h-[150px]"
+                          className="min-h-[150px] resize-y"
                           {...field} 
                         />
                       </FormControl>
+                      <FormDescription>
+                        Include amenities, unique features, and selling points
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                
-                {/* We'll add photo upload functionality in a future iteration */}
-                <div className="bg-gray-50 p-4 rounded-md border border-dashed border-gray-300 text-center">
-                  <p className="text-muted-foreground">
-                    Photo upload will be available soon. In the meantime, please submit your listing 
-                    and our team will contact you about adding photos.
-                  </p>
-                </div>
-                
-                <div className="flex justify-end">
-                  <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting ? "Submitting..." : "Submit Listing"}
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          </div>
+              </div>
+              
+              <div className="bg-[#f74f4f]/5 p-6 rounded-lg border border-dashed border-[#f74f4f]/30 text-center mt-8">
+                <Upload className="h-8 w-8 mx-auto text-[#f74f4f]/50 mb-2" />
+                <h3 className="font-medium text-gray-800 mb-1">Photo Upload Coming Soon</h3>
+                <p className="text-gray-500 text-sm">
+                  Photo upload will be available soon. In the meantime, please submit your listing 
+                  and our team will contact you about adding photos.
+                </p>
+              </div>
+              
+              <div className="flex justify-end pt-4 border-t mt-8">
+                <Button 
+                  type="submit" 
+                  disabled={isSubmitting} 
+                  className="bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
+                >
+                  {isSubmitting ? "Submitting..." : "Submit Listing"}
+                </Button>
+              </div>
+            </form>
+          </Form>
         </div>
       </div>
       
-      <Footer />
+      <div className="mt-auto">
+        <Footer />
+      </div>
     </div>
   );
 };
