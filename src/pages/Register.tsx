@@ -13,6 +13,8 @@ const Register = () => {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
+  const [firstName, setFirstName] = useState(""); // Nuevo estado para nombre
+  const [lastName, setLastName] = useState(""); // Nuevo estado para apellido
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -38,7 +40,25 @@ const Register = () => {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Custom validation in English
+    // Validación para campos requeridos
+    if (!firstName) {
+      toast({
+        title: "Required Field",
+        description: "Please enter your first name",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!lastName) {
+      toast({
+        title: "Required Field",
+        description: "Please enter your last name",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     if (!email) {
       toast({
         title: "Required Field",
@@ -116,19 +136,19 @@ const Register = () => {
     setLoading(true);
 
     try {
-      // Primer paso: Registro con metadatos
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            phone_number: phone
-          },
-          // 👇 Esto es importante para asegurarnos de que se guarden los metadatos
-          emailRedirectTo: `${window.location.origin}/login`
-        }
-      });
-
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          first_name: firstName,
+          last_name: lastName,
+          phone_number: phone
+        },
+        // Redirigir al callback de auth para que podamos interceptarlo
+        emailRedirectTo: `${window.location.origin}/auth/callback`
+      }
+    });
       if (error) {
         toast({
           title: "Error",
@@ -150,7 +170,11 @@ const Register = () => {
             // Esto es una protección adicional por si la primera vez no se guardó bien
             if (data.session) {
               const { error: updateError } = await supabase.auth.updateUser({
-                data: { phone_number: phone }
+                data: { 
+                  first_name: firstName,
+                  last_name: lastName,
+                  phone_number: phone 
+                }
               });
               
               if (updateError) {
@@ -160,6 +184,8 @@ const Register = () => {
             
             // Guardar en el almacenamiento local para uso posterior
             localStorage.setItem('userPhone', phone);
+            localStorage.setItem('userFirstName', firstName);
+            localStorage.setItem('userLastName', lastName);
             
             toast({
               title: "Registration successful!",
@@ -203,6 +229,30 @@ const Register = () => {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleRegister} className="space-y-4" noValidate>
+              {/* Nuevos campos para nombre y apellido */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="firstName">First Name</Label>
+                  <Input
+                    id="firstName"
+                    type="text"
+                    placeholder="John"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="lastName">Last Name</Label>
+                  <Input
+                    id="lastName"
+                    type="text"
+                    placeholder="Doe"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                  />
+                </div>
+              </div>
+              
               <div>
                 <Label htmlFor="email">Email</Label>
                 <Input

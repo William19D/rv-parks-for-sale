@@ -1,9 +1,19 @@
-
-import { useState, useEffect } from "react";
+import { useState, useEffect, createContext, useContext, ReactNode } from "react";
 import { User } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "@/integrations/supabase/client";
 
-export const useAuth = () => {
+// Crear el contexto de autenticación
+type AuthContextType = {
+  user: User | null;
+  loading: boolean;
+  signOut: () => Promise<void>;
+  isConfigured: boolean;
+};
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+// Provider component
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -52,10 +62,21 @@ export const useAuth = () => {
     }
   };
 
-  return {
+  const value = {
     user,
     loading,
     signOut,
     isConfigured: isSupabaseConfigured,
   };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+// Hook para usar el contexto de autenticación
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 };
