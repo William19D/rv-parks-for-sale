@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -10,7 +10,8 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, DollarSign, MapPin, Home, PercentSquare, X, Image as ImageIcon, CheckSquare, Building } from "lucide-react";
+import { Upload, DollarSign, MapPin, Home, PercentSquare, X, Image as ImageIcon, 
+         CheckSquare, Building, Map as MapIcon, Loader2 } from "lucide-react";
 import { states } from "@/data/mockListings";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
@@ -19,8 +20,12 @@ import { Progress } from "@/components/ui/progress";
 import { v4 as uuidv4 } from "uuid";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Card, CardContent } from "@/components/ui/card";
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
+import { Icon, LatLng } from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
-// Esquema de validación mejorado con validaciones estrictas
+// Enhanced validation schema with NUMERIC CONSTRAINTS added
 const listingSchema = z.object({
   title: z
     .string()
@@ -34,6 +39,9 @@ const listingSchema = z.object({
     })
     .refine(val => Number(val) > 0, { 
       message: "Price must be greater than zero" 
+    })
+    .refine(val => Number(val) < 9999999999, {  // Added constraint
+      message: "Price must be less than 10 billion"
     }),
   
   description: z
@@ -60,6 +68,9 @@ const listingSchema = z.object({
     })
     .refine(val => Number(val) > 0, { 
       message: "Number of sites must be greater than zero" 
+    })
+    .refine(val => Number(val) < 1000000, {  // Added constraint
+      message: "Number of sites must be realistic (less than 1 million)"
     }),
   
   occupancyRate: z
@@ -78,6 +89,9 @@ const listingSchema = z.object({
     })
     .refine(val => Number(val) >= 0, { 
       message: "Annual revenue must be a positive number" 
+    })
+    .refine(val => Number(val) < 9999999999, {  // Added constraint
+      message: "Annual revenue must be less than 10 billion"
     }),
   
   capRate: z
@@ -89,17 +103,34 @@ const listingSchema = z.object({
       message: "Cap rate must be between 0-100%" 
     }),
   
-  // Nuevos campos para tipo de propiedad y amenidades
+  // Property type and amenities
   propertyType: z
     .string()
     .min(1, { message: "Property type is required" }),
   
   amenities: z
     .record(z.boolean())
-    .default({})
+    .default({}),
+    
+  // Map location fields
+  latitude: z
+    .number()
+    .min(-90, { message: "Latitude must be between -90 and 90" })
+    .max(90, { message: "Latitude must be between -90 and 90" })
+    .optional(),
+    
+  longitude: z
+    .number()
+    .min(-180, { message: "Longitude must be between -180 and 180" })
+    .max(180, { message: "Longitude must be between -180 and 180" })
+    .optional(),
+    
+  location_set: z
+    .boolean()
+    .optional()
 });
 
-// Tipo para las imágenes
+// Image upload interface
 interface ImageUpload {
   file: File;
   preview: string;
@@ -137,6 +168,279 @@ const amenitiesList = [
   "Recreation Hall"
 ];
 
+// State abbreviations mapping to support better state matching
+const stateAbbreviations: Record<string, string> = {
+  "AL": "Alabama",
+  "AK": "Alaska",
+  "AZ": "Arizona",
+  "AR": "Arkansas",
+  "CA": "California",
+  "CO": "Colorado",
+  "CT": "Connecticut",
+  "DE": "Delaware",
+  "FL": "Florida",
+  "GA": "Georgia",
+  "HI": "Hawaii",
+  "ID": "Idaho",
+  "IL": "Illinois",
+  "IN": "Indiana",
+  "IA": "Iowa",
+  "KS": "Kansas",
+  "KY": "Kentucky",
+  "LA": "Louisiana",
+  "ME": "Maine",
+  "MD": "Maryland",
+  "MA": "Massachusetts",
+  "MI": "Michigan",
+  "MN": "Minnesota",
+  "MS": "Mississippi",
+  "MO": "Missouri",
+  "MT": "Montana",
+  "NE": "Nebraska",
+  "NV": "Nevada",
+  "NH": "New Hampshire",
+  "NJ": "New Jersey",
+  "NM": "New Mexico",
+  "NY": "New York",
+  "NC": "North Carolina",
+  "ND": "North Dakota",
+  "OH": "Ohio",
+  "OK": "Oklahoma",
+  "OR": "Oregon",
+  "PA": "Pennsylvania",
+  "RI": "Rhode Island",
+  "SC": "South Carolina",
+  "SD": "South Dakota",
+  "TN": "Tennessee",
+  "TX": "Texas",
+  "UT": "Utah",
+  "VT": "Vermont",
+  "VA": "Virginia",
+  "WA": "Washington",
+  "WV": "West Virginia",
+  "WI": "Wisconsin",
+  "WY": "Wyoming",
+  "DC": "District of Columbia"
+};
+
+// Generate reverse mapping
+const stateToAbbreviation: Record<string, string> = {};
+Object.entries(stateAbbreviations).forEach(([abbr, name]) => {
+  stateToAbbreviation[name.toLowerCase()] = abbr;
+});
+
+// Draggable marker component with enhanced popup and reverse geocoding
+interface DraggableMarkerProps {
+  position: [number, number];
+  onPositionChange: (lat: number, lng: number) => void;
+  onLocationInfoChange?: (city: string, state: string) => void;
+  propertyType?: string;
+}
+
+const DraggableMarker: React.FC<DraggableMarkerProps> = ({ 
+  position, 
+  onPositionChange, 
+  onLocationInfoChange, 
+  propertyType = "property" 
+}) => {
+  const [markerPosition, setMarkerPosition] = useState<[number, number]>(position);
+  
+  const eventHandlers = {
+    dragend(e: any) {
+      const marker = e.target;
+      const position = marker.getLatLng();
+      setMarkerPosition([position.lat, position.lng]);
+      onPositionChange(position.lat, position.lng);
+      
+      // Perform reverse geocoding to get city and state
+      if (onLocationInfoChange) {
+        reverseGeocode(position.lat, position.lng).then(({ city, state }) => {
+          if (city && state) {
+            onLocationInfoChange(city, state);
+          }
+        });
+      }
+    }
+  };
+
+  // Enhanced reverse geocode function to convert coordinates to address
+  const reverseGeocode = async (lat: number, lng: number): Promise<{ city: string, state: string }> => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
+      );
+      const data = await response.json();
+      
+      let city = '';
+      let state = '';
+      
+      if (data && data.address) {
+        console.log("Geocode data:", data.address);
+        
+        // Try to get city (may be labeled differently based on region)
+        city = data.address.city || 
+               data.address.town || 
+               data.address.village || 
+               data.address.hamlet ||
+               '';
+        
+        // Get state - First try to match the standard field names
+        state = data.address.state || data.address.province || '';
+
+        // Check if state is an abbreviation or has abbreviation
+        let stateValue = '';
+        
+        // Try to match by full state name
+        if (state) {
+          // Check if we got a full state name that's in our list
+          const matchedState = states.find(s => 
+            s.toLowerCase() === state.toLowerCase() || 
+            state.toLowerCase().includes(s.toLowerCase())
+          );
+          
+          if (matchedState) {
+            stateValue = matchedState;
+          } 
+          // Try to match by abbreviation
+          else {
+            const stateAbbr = state.length === 2 ? state.toUpperCase() : '';
+            if (stateAbbr && stateAbbreviations[stateAbbr]) {
+              stateValue = stateAbbreviations[stateAbbr];
+            } else {
+              // Try to find the state by matching the beginning of the state name
+              for (const s of states) {
+                if (state.toLowerCase().startsWith(s.toLowerCase()) || 
+                    s.toLowerCase().startsWith(state.toLowerCase())) {
+                  stateValue = s;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        
+        // If we found a valid state in our list, use it
+        if (states.includes(stateValue)) {
+          state = stateValue;
+        } 
+        // Otherwise, try to extract from the display_name as last resort
+        else if (data.display_name) {
+          const nameParts = data.display_name.split(', ');
+          // Usually the state is near the end of the display name
+          for (let i = nameParts.length - 3; i >= 0; i--) {
+            const part = nameParts[i];
+            for (const s of states) {
+              if (part === s || part.includes(s)) {
+                state = s;
+                break;
+              }
+            }
+            if (state) break;
+          }
+        }
+      }
+      
+      console.log("Matched city and state:", { city, state });
+      return { city, state };
+    } catch (error) {
+      console.error("Error in reverse geocoding:", error);
+      return { city: '', state: '' };
+    }
+  };
+
+  // Update marker position when external position changes
+  useEffect(() => {
+    setMarkerPosition(position);
+  }, [position]);
+
+  return (
+    <Marker 
+      position={markerPosition} 
+      draggable={true}
+      eventHandlers={eventHandlers}
+    >
+      <Popup>
+        <div className="text-center">
+          <strong>Property Location</strong>
+          <p className="mt-1">Drag this marker to set the exact location of your {propertyType}.</p>
+          <p className="text-sm text-gray-600 mt-1">City and state will update automatically.</p>
+        </div>
+      </Popup>
+    </Marker>
+  );
+};
+
+// Location finder component - now doesn't interfere with map interaction
+interface LocationFinderProps {
+  city: string;
+  state: string;
+  onLocationFound: (lat: number, lng: number) => void;
+  searchTriggered: boolean;
+}
+
+const LocationFinder: React.FC<LocationFinderProps> = ({ city, state, onLocationFound, searchTriggered }) => {
+  const map = useMap();
+  const searchComplete = useRef(false);
+  
+  useEffect(() => {
+    // Only search if both city and state are provided and search was triggered
+    // and we haven't already searched for this city+state combination
+    if (city && state && searchTriggered && !searchComplete.current) {
+      const searchLocation = async () => {
+        try {
+          const query = `${city}, ${state}, USA`;
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`
+          );
+          const data = await response.json();
+          
+          if (data && data.length > 0) {
+            const { lat, lon } = data[0];
+            const latitude = parseFloat(lat);
+            const longitude = parseFloat(lon);
+            
+            // Set the view but don't lock it
+            map.setView([latitude, longitude], 13);
+            onLocationFound(latitude, longitude);
+            searchComplete.current = true;
+          }
+        } catch (error) {
+          console.error("Error finding location:", error);
+        }
+      };
+      
+      searchLocation();
+    }
+  }, [city, state, searchTriggered, map, onLocationFound]);
+  
+  // Reset search complete when city or state changes
+  useEffect(() => {
+    searchComplete.current = false;
+  }, [city, state]);
+  
+  return null;
+};
+
+// FIXED: Simplified function that just checks if a bucket exists
+const checkBucketExists = async (bucketName: string): Promise<boolean> => {
+  try {
+    // Check if bucket exists
+    const { data: buckets, error } = await supabase.storage.listBuckets();
+    
+    if (error) {
+      console.error("Error checking buckets:", error);
+      return false;
+    }
+    
+    // Return true if the bucket exists
+    return buckets?.some(b => b.name === bucketName) || false;
+    
+  } catch (e) {
+    console.error("Error checking bucket:", e);
+    return false;
+  }
+};
+
 const AddListing = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -144,6 +448,41 @@ const AddListing = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [images, setImages] = useState<ImageUpload[]>([]);
   const [selectedAmenities, setSelectedAmenities] = useState<Record<string, boolean>>({});
+  const [markerPosition, setMarkerPosition] = useState<[number, number]>([39.8283, -98.5795]); // USA center
+  const [locationFound, setLocationFound] = useState(false);
+  const [searchTriggered, setSearchTriggered] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  
+  // Fix for z-index issues with dropdowns
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.innerHTML = `
+      .leaflet-container {
+        z-index: 1 !important;
+      }
+      
+      [data-radix-popper-content-wrapper] {
+        z-index: 9999 !important;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+  
+  // Check if storage bucket exists when component mounts
+  useEffect(() => {
+    const initializeStorage = async () => {
+      const bucketExists = await checkBucketExists('listing-images');
+      if (!bucketExists) {
+        console.log("Note: The 'listing-images' bucket doesn't exist. You may need to create it in the Supabase admin dashboard.");
+      }
+    };
+    
+    initializeStorage();
+  }, []);
   
   const form = useForm<z.infer<typeof listingSchema>>({
     resolver: zodResolver(listingSchema),
@@ -158,51 +497,136 @@ const AddListing = () => {
       annualRevenue: "",
       capRate: "",
       propertyType: "",
-      amenities: {}
+      amenities: {},
+      latitude: undefined,
+      longitude: undefined,
+      location_set: false
     },
-    mode: "onChange", // Validar al cambiar los campos
+    mode: "onChange",
   });
 
-  // Helpers para validar inputs numéricos
+  const { watch } = form;
+  const city = watch('city');
+  const state = watch('state');
+  const propertyType = watch('propertyType');
+
+  // Number input formatting helper
   const formatNumberInput = (value: string, allowDecimal: boolean = true) => {
     if (!value) return value;
     
-    // Eliminar caracteres no numéricos excepto punto decimal si está permitido
     if (allowDecimal) {
       value = value.replace(/[^\d.]/g, "");
       
-      // Asegurar que solo hay un punto decimal
       const parts = value.split(".");
       if (parts.length > 2) {
         value = `${parts[0]}.${parts.slice(1).join("")}`;
       }
       
-      // Limitar a dos decimales
       if (value.includes(".")) {
         const [whole, decimal] = value.split(".");
         value = `${whole}.${decimal.slice(0, 2)}`;
       }
     } else {
-      // Solo permitir dígitos enteros
       value = value.replace(/[^\d]/g, "");
     }
     
     return value;
   };
 
-  // Función para manejar amenidades
+  // Amenity selection handler
   const handleAmenityChange = (amenity: string, checked: boolean) => {
     const updatedAmenities = { ...selectedAmenities, [amenity]: checked };
     setSelectedAmenities(updatedAmenities);
     form.setValue('amenities', updatedAmenities);
   };
+  
+  // Marker position change handler
+  const handlePositionChange = (lat: number, lng: number) => {
+    setMarkerPosition([lat, lng]);
+    form.setValue('latitude', lat);
+    form.setValue('longitude', lng);
+    form.setValue('location_set', true);
+  };
+  
+  // Location found handler
+  const handleLocationFound = (lat: number, lng: number) => {
+    setMarkerPosition([lat, lng]);
+    form.setValue('latitude', lat);
+    form.setValue('longitude', lng);
+    setLocationFound(true);
+    form.setValue('location_set', true);
+  };
+  
+  // Handle location info change from marker drag
+  const handleLocationInfoChange = (city: string, state: string) => {
+    if (city) {
+      form.setValue('city', city);
+    }
+    
+    if (state) {
+      // If we get a valid state from the geocoding API, update the form
+      if (states.includes(state)) {
+        form.setValue('state', state);
+      }
+    }
+  };
 
-  // Función para manejar la selección de archivos
+  // Manual location search function
+  const handleSearchLocation = async () => {
+    const currentCity = form.getValues('city');
+    const currentState = form.getValues('state');
+    
+    if (!currentCity || !currentState) {
+      toast({
+        variant: "destructive",
+        title: "Location information missing",
+        description: "Please enter both city and state to search for a location"
+      });
+      return;
+    }
+    
+    try {
+      const query = `${currentCity}, ${currentState}, USA`;
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`
+      );
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        const { lat, lon } = data[0];
+        const latitude = parseFloat(lat);
+        const longitude = parseFloat(lon);
+        
+        handleLocationFound(latitude, longitude);
+        setSearchTriggered(prev => !prev); // Toggle to trigger a new search
+        
+        toast({
+          title: "Location found",
+          description: `Found coordinates for ${currentCity}, ${currentState}`
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Location not found",
+          description: "Could not find coordinates for this location. Try entering a more specific location."
+        });
+      }
+    } catch (error) {
+      console.error("Error searching location:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "An error occurred while searching for the location. Please try again."
+      });
+    }
+  };
+
+  // File selection handler
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFiles = Array.from(e.target.files);
       
-      // Limitar a 5 imágenes en total
+      // Limit to 5 images total
       if (selectedFiles.length + images.length > 5) {
         toast({
           variant: "destructive",
@@ -212,7 +636,7 @@ const AddListing = () => {
         return;
       }
 
-      // Validar tipos de archivo y tamaños
+      // Validate file types and sizes
       const validImageTypes = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
       const maxSizeInBytes = 5 * 1024 * 1024; // 5MB
       
@@ -238,7 +662,7 @@ const AddListing = () => {
         return true;
       });
 
-      // Crear objetos para cada imagen seleccionada
+      // Create image objects
       const newImages = validFiles.map(file => {
         return {
           file,
@@ -253,87 +677,179 @@ const AddListing = () => {
     }
   };
 
-  // Función para eliminar una imagen
+  // Image removal handler
   const removeImage = (id: string) => {
     setImages(images.filter(image => image.id !== id));
   };
 
-  // Función para subir imágenes a Supabase Storage
+  // FIXED: Updated upload function that doesn't try to create buckets
   const uploadImagesToSupabase = async (listingId: number) => {
-    const uploadedImages = [];
+  if (!user) {
+    console.error("User not authenticated");
+    toast({
+      variant: "destructive",
+      title: "Authentication error",
+      description: "You must be logged in to upload images"
+    });
+    return false;
+  }
+
+  // Check if we have images to upload
+  if (images.length === 0) {
+    console.log("No images to upload");
+    return true; // Return success because there's nothing to upload
+  }
+
+  setUploadStatus("Uploading images...");
+  let successCount = 0;
+  let errorCount = 0;
+  
+  for (let i = 0; i < images.length; i++) {
+    const image = images[i];
+    const imageNumber = i + 1;
+    setUploadStatus(`Uploading image ${imageNumber} of ${images.length}...`);
     
-    // Para cada imagen, subirla a Supabase Storage
-    for (let image of images) {
+    try {
+      // Show start of upload in UI
+      setImages(prevImages => 
+        prevImages.map(img => 
+          img.id === image.id ? { ...img, progress: 10 } : img
+        )
+      );
+      
+      // Create a unique, clean filename with a safe path
+      const fileExt = image.file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const timestamp = Date.now();
+      const uniqueId = uuidv4().substring(0, 6);
+      const fileName = `image_${timestamp}_${uniqueId}.${fileExt}`;
+      const filePath = `${user.id}/${fileName}`;
+      
+      console.log(`Starting upload of image ${imageNumber}/${images.length}: ${filePath}`);
+      
+      // Update progress
+      setImages(prevImages => 
+        prevImages.map(img => 
+          img.id === image.id ? { ...img, progress: 30 } : img
+        )
+      );
+      
+      // Upload to Supabase Storage - using try/catch to handle any errors
+      let uploadSuccess = false;
       try {
-        // Crear un nombre de archivo único basado en la fecha y UUID
-        const fileName = `${Date.now()}-${uuidv4().substring(0, 8)}-${image.file.name.replace(/\s+/g, '-')}`;
-        const filePath = `rv-parks/${user?.id}/${fileName}`;
-        
-        // Actualizar el progreso de la carga
-        setImages(prevImages => 
-          prevImages.map(img => 
-            img.id === image.id ? { ...img, progress: 20 } : img
-          )
-        );
-        
-        // Subir la imagen a Supabase Storage
-        const { data, error } = await supabase.storage
+        const { data, error: uploadError } = await supabase.storage
           .from('listing-images')
           .upload(filePath, image.file, {
             cacheControl: '3600',
-            upsert: false
+            upsert: true
           });
 
-        if (error) throw error;
-        
-        // Actualizar el progreso y el estado
-        setImages(prevImages => 
-          prevImages.map(img => 
-            img.id === image.id 
-              ? { ...img, progress: 100, uploaded: true, path: data.path } 
-              : img
-          )
-        );
-        
-        // Insertar en la tabla listing_images
-        const { data: imageData, error: imageError } = await supabase
-          .from('listing_images')
-          .insert({
-            listing_id: listingId,
-            storage_path: data.path,
-            position: uploadedImages.length,  // Posición basada en el orden de subida
-            is_primary: uploadedImages.length === 0  // Primera imagen es la primaria
-          })
-          .select();
-          
-        if (imageError) throw imageError;
-        
-        uploadedImages.push(imageData?.[0]);
-        
-      } catch (error: any) {
-        // Manejar errores
-        console.error(`Error uploading image: ${error.message}`);
-        setImages(prevImages => 
-          prevImages.map(img => 
-            img.id === image.id 
-              ? { ...img, error: error.message, progress: 0 } 
-              : img
-          )
-        );
-        
-        // Mostrar mensaje de error
-        toast({
-          variant: "destructive",
-          title: "Error uploading image",
-          description: error.message
-        });
+        if (uploadError) throw uploadError;
+        uploadSuccess = true;
+        console.log(`Storage upload successful for image ${imageNumber}`);
+      } catch (uploadError: any) {
+        console.error(`Storage upload error for image ${imageNumber}:`, uploadError);
+        throw new Error(`Failed to upload image: ${uploadError.message || "Unknown error"}`);
       }
-    }
-    
-    return uploadedImages.length > 0;
-  };
 
-  // Función para manejar el envío del formulario
+      // Update progress after successful upload
+      setImages(prevImages => 
+        prevImages.map(img => 
+          img.id === image.id ? { ...img, progress: 70, path: filePath } : img
+        )
+      );
+      
+      // Only proceed with DB update if storage upload succeeded
+      if (uploadSuccess) {
+        try {
+          // Create database record with simplified fields
+          const { error: dbError } = await supabase
+            .from('listing_images')
+            .insert([{
+              listing_id: listingId,
+              storage_path: filePath,
+              position: i,
+              is_primary: i === 0  // First image is primary
+            }]);
+              
+          if (dbError) throw dbError;
+          console.log(`Database record created successfully for image ${imageNumber}`);
+        } catch (dbError: any) {
+          console.error(`Database error for image ${imageNumber}:`, dbError);
+          
+          // Try to delete orphaned file from storage
+          try {
+            await supabase.storage
+              .from('listing-images')
+              .remove([filePath]);
+            console.log(`Removed orphaned file ${filePath} after database error`);
+          } catch (removeError) {
+            console.error(`Failed to remove orphaned file ${filePath}:`, removeError);
+          }
+          
+          throw new Error(`Failed to save image info: ${dbError.message || "Database error"}`);
+        }
+      }
+      
+      // Update UI to show complete success
+      setImages(prevImages => 
+        prevImages.map(img => 
+          img.id === image.id ? { 
+            ...img, 
+            progress: 100, 
+            uploaded: true,
+            path: filePath
+          } : img
+        )
+      );
+      
+      successCount++;
+      
+    } catch (error: any) {
+      errorCount++;
+      console.error(`Error uploading image ${imageNumber}:`, error);
+      
+      setImages(prevImages => 
+        prevImages.map(img => 
+          img.id === image.id ? { 
+            ...img, 
+            progress: 0, 
+            error: error.message || "Upload failed" 
+          } : img
+        )
+      );
+    }
+  }
+  
+  setUploadStatus(null);
+  
+  // Provide appropriate feedback based on results
+  if (errorCount > 0) {
+    if (successCount > 0) {
+      toast({
+        variant: "default",
+        title: `Mixed upload results`,
+        description: `${successCount} images uploaded, ${errorCount} failed.`
+      });
+    } else {
+      toast({
+        variant: "destructive",
+        title: `All uploads failed`,
+        description: "None of your images could be uploaded. Please try again."
+      });
+    }
+  } else if (successCount > 0) {
+    toast({
+      variant: "default", 
+      title: "Images uploaded successfully",
+      description: `All ${successCount} image(s) were uploaded.`
+    });
+  }
+  
+  return successCount > 0;
+};
+
+  
+  // Form submission handler
   const onSubmit = async (values: z.infer<typeof listingSchema>) => {
     if (!user) {
       toast({
@@ -344,45 +860,90 @@ const AddListing = () => {
       return;
     }
     
+    // Validate location selection
+    if (!values.latitude || !values.longitude) {
+      toast({
+        variant: "destructive",
+        title: "Location required",
+        description: "Please select a location for your property on the map."
+      });
+      return;
+    }
+    
     setIsSubmitting(true);
     
     try {
-      // Crear el objeto de datos para la base de datos
+      // FIXED: Create listing data object with number validation
+      const price = parseFloat(values.price);
+      const annual_revenue = parseFloat(values.annualRevenue);
+      
+      // Additional validation to prevent numeric overflow
+      if (price >= 9999999999) {
+        throw new Error("Price is too large for database. Maximum value is 9,999,999,999.99");
+      }
+      
+      if (annual_revenue >= 9999999999) {
+        throw new Error("Annual revenue is too large for database. Maximum value is 9,999,999,999.99");
+      }
+      
       const listingData = {
         title: values.title.trim(),
-        price: parseFloat(values.price),
+        price: price,
         description: values.description.trim(),
         city: values.city.trim(),
         state: values.state,
+        latitude: values.latitude,
+        longitude: values.longitude,
         num_sites: parseInt(values.numSites),
         occupancy_rate: parseFloat(values.occupancyRate),
-        annual_revenue: parseFloat(values.annualRevenue),
+        annual_revenue: annual_revenue,
         cap_rate: parseFloat(values.capRate),
         user_id: user.id,
-        created_at: new Date(),
-        status: 'pending', // initial status (pending review)
+        created_at: new Date().toISOString(),
+        status: 'pending',
         property_type: values.propertyType,
         amenities: values.amenities
       };
       
-      // Guardar el listado en la tabla 'listings' de Supabase
+      console.log("Submitting listing with validated numeric fields:", listingData);
+      
+      // Insert into listings table
       const { data, error } = await supabase
         .from('listings')
         .insert([listingData])
         .select();
       
-      if (error) throw error;
+      if (error) {
+        console.error("Error creating listing:", error);
+        throw error;
+      }
       
-      // Ahora subir las imágenes si hay un listado creado exitosamente
-      if (data && data[0] && images.length > 0) {
-        const listingId = data[0].id;
-        const uploadSuccess = await uploadImagesToSupabase(listingId);
-        
-        if (!uploadSuccess) {
+      if (!data || data.length === 0) {
+        throw new Error("Listing was created but no data was returned");
+      }
+      
+      const newListingId = data[0].id;
+      console.log("Created listing with ID:", newListingId);
+      
+      // Upload images if listing was created and there are images to upload
+      if (images.length > 0) {
+        try {
+          console.log(`Uploading ${images.length} images for listing ${newListingId}...`);
+          const uploadSuccess = await uploadImagesToSupabase(newListingId);
+          
+          if (!uploadSuccess && images.length > 0) {
+            toast({
+              variant: "default",
+              title: "⚠️ Listing created with issues",
+              description: "Your listing was created, but there were problems with some images."
+            });
+          }
+        } catch (uploadError) {
+          console.error("Error in image upload process:", uploadError);
           toast({
             variant: "destructive",
-            title: "Listing created but some images failed",
-            description: "Your listing was created but there were issues with some images."
+            title: "Image upload error",
+            description: "Your listing was created, but we couldn't upload your images."
           });
         }
       }
@@ -393,7 +954,7 @@ const AddListing = () => {
         description: "Your property has been added to our listings and is pending review.",
       });
       
-      // Redirect to broker dashboard después de un breve delay
+      // Redirect to broker dashboard
       setTimeout(() => {
         navigate("/broker/dashboard");
       }, 1500);
@@ -407,6 +968,7 @@ const AddListing = () => {
       });
     } finally {
       setIsSubmitting(false);
+      setUploadStatus(null);
     }
   };
 
@@ -467,7 +1029,12 @@ const AddListing = () => {
                             {...restField} 
                             onChange={(e) => {
                               const formattedValue = formatNumberInput(e.target.value, true);
-                              e.target.value = formattedValue;
+                              // ADDED: Value limit for numeric field
+                              if (formattedValue && parseFloat(formattedValue) > 9999999999) {
+                                e.target.value = "9999999999";
+                              } else {
+                                e.target.value = formattedValue;
+                              }
                               onChange(e);
                             }}
                             inputMode="decimal"
@@ -476,7 +1043,7 @@ const AddListing = () => {
                         </div>
                       </FormControl>
                       <FormDescription>
-                        Enter the asking price for your property (numbers only)
+                        Enter the asking price for your property (max 9,999,999,999.99)
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -510,17 +1077,18 @@ const AddListing = () => {
                     control={form.control}
                     name="state"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="relative">
                         <FormLabel>State</FormLabel>
                         <FormControl>
                           <Select 
                             onValueChange={field.onChange} 
                             defaultValue={field.value}
+                            value={field.value}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select state" />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className="z-[9999]">
                               {states.map((state) => (
                                 <SelectItem key={state} value={state}>{state}</SelectItem>
                               ))}
@@ -531,6 +1099,69 @@ const AddListing = () => {
                       </FormItem>
                     )}
                   />
+                </div>
+                
+                {/* Map Location Section */}
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-medium flex items-center gap-2">
+                      <MapIcon className="h-4 w-4 text-gray-500" />
+                      Property Location
+                    </h3>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm"
+                      onClick={handleSearchLocation}
+                    >
+                      Find Location
+                    </Button>
+                  </div>
+                  
+                  <Card>
+                    <CardContent className="p-1">
+                      <div className="h-[300px] w-full rounded-md overflow-hidden">
+                        <MapContainer
+                          center={markerPosition}
+                          zoom={locationFound ? 15 : 4}
+                          style={{ height: '100%', width: '100%' }}
+                          doubleClickZoom={true}
+                          scrollWheelZoom={true}
+                        >
+                          <TileLayer
+                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          />
+                          <DraggableMarker 
+                            position={markerPosition} 
+                            onPositionChange={handlePositionChange}
+                            onLocationInfoChange={handleLocationInfoChange}
+                            propertyType={propertyType || "RV Park"}
+                          />
+                          <LocationFinder 
+                            city={city} 
+                            state={state} 
+                            onLocationFound={handleLocationFound}
+                            searchTriggered={searchTriggered}
+                          />
+                        </MapContainer>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  <div className="flex flex-wrap gap-3 text-sm items-center">
+                    <div className={`px-3 py-1 rounded-full ${form.getValues('location_set') ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                      {form.getValues('location_set') ? 'Location set' : 'Location not set'}
+                    </div>
+                    {form.getValues('latitude') && form.getValues('longitude') && (
+                      <span className="text-gray-500">
+                        Coordinates: {form.getValues('latitude')?.toFixed(6)}, {form.getValues('longitude')?.toFixed(6)}
+                      </span>
+                    )}
+                  </div>
+                  <FormDescription>
+                    After entering your city and state, click "Find Location". You can also drag the marker to adjust the location - city and state will update automatically.
+                  </FormDescription>
                 </div>
               </div>
               
@@ -619,7 +1250,12 @@ const AddListing = () => {
                             {...restField}
                             onChange={(e) => {
                               const formattedValue = formatNumberInput(e.target.value, false);
-                              e.target.value = formattedValue;
+                              // ADDED: Value limit for numeric field
+                              if (formattedValue && parseInt(formattedValue) > 999999) {
+                                e.target.value = "999999";
+                              } else {
+                                e.target.value = formattedValue;
+                              }
                               onChange(e);
                             }}
                             inputMode="numeric"
@@ -647,7 +1283,7 @@ const AddListing = () => {
                               {...restField}
                               onChange={(e) => {
                                 const formattedValue = formatNumberInput(e.target.value, true);
-                                // Limitar a 100
+                                // Limit to 100
                                 if (formattedValue && parseFloat(formattedValue) > 100) {
                                   e.target.value = "100";
                                 } else {
@@ -685,7 +1321,12 @@ const AddListing = () => {
                               {...restField}
                               onChange={(e) => {
                                 const formattedValue = formatNumberInput(e.target.value, true);
-                                e.target.value = formattedValue;
+                                // ADDED: Value limit for numeric field
+                                if (formattedValue && parseFloat(formattedValue) > 9999999999) {
+                                  e.target.value = "9999999999";
+                                } else {
+                                  e.target.value = formattedValue;
+                                }
                                 onChange(e);
                               }}
                               inputMode="decimal"
@@ -694,7 +1335,7 @@ const AddListing = () => {
                           </div>
                         </FormControl>
                         <FormDescription>
-                          Enter the annual revenue (numbers only)
+                          Enter the annual revenue (max 9,999,999,999.99)
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -715,7 +1356,7 @@ const AddListing = () => {
                               {...restField}
                               onChange={(e) => {
                                 const formattedValue = formatNumberInput(e.target.value, true);
-                                // Limitar a 100
+                                // Limit to 100
                                 if (formattedValue && parseFloat(formattedValue) > 100) {
                                   e.target.value = "100";
                                 } else {
@@ -788,6 +1429,11 @@ const AddListing = () => {
                             <Progress value={image.progress} className="w-4/5 h-2" />
                           </div>
                         )}
+                        {image.error && (
+                          <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center">
+                            <span className="text-xs text-white px-1 bg-red-500/70 rounded">Error</span>
+                          </div>
+                        )}
                         <button 
                           type="button"
                           onClick={() => removeImage(image.id)}
@@ -828,7 +1474,12 @@ const AddListing = () => {
                   disabled={isSubmitting} 
                   className="bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
                 >
-                  {isSubmitting ? "Submitting..." : "Submit Listing"}
+                  {isSubmitting ? (
+                    <div className="flex items-center">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {uploadStatus || "Submitting..."}
+                    </div>
+                  ) : "Submit Listing"}
                 </Button>
               </div>
             </form>
