@@ -249,7 +249,7 @@ const Index = () => {
               className="order-1 lg:order-2 bg-gray-100 rounded-xl p-3 shadow-lg"
             >
               <img 
-                src="https://placehold.co/600x400/f5f5f5/cccccc?text=Campground+Reservation+Software" 
+                src="/sofware.png" 
                 alt="RoverPass Campground Reservation Software" 
                 className="w-full h-auto rounded-lg" 
               />

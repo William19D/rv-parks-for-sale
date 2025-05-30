@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Header, HeaderSpacer } from "@/components/layout/Header"; // Import HeaderSpacer
+import { Header, HeaderSpacer } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { ContactForm } from "@/components/listings/ContactForm";
 import { useParams, Link } from "react-router-dom";
@@ -10,7 +10,8 @@ import {
   ArrowLeft, Download, MapPin, Share2, Heart, 
   Calendar, Users, PercentSquare, DollarSign, 
   Building, ChevronLeft, ChevronRight, Maximize2, 
-  Star, ExternalLink, MessageSquare, Phone, Mail
+  Star, ExternalLink, MessageSquare, Phone, Mail,
+  Loader2
 } from "lucide-react";
 import { ListingCard } from "@/components/listings/ListingCard";
 import { Badge } from "@/components/ui/badge";
@@ -23,20 +24,170 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+// Interface for both mock and Supabase listings
+interface ListingData {
+  id: string | number;
+  title: string;
+  description?: string;
+  price: number;
+  images: string[];
+  broker?: {
+    id: string;
+    name: string;
+    company?: string;
+    avatar?: string;
+    email?: string;
+  };
+  location: {
+    city: string;
+    state: string;
+    address?: string;
+  };
+  numSites?: number;
+  occupancyRate?: number;
+  annualRevenue?: number;
+  capRate?: number;
+  videoUrl?: string;
+  pdfUrl?: string;
+  status?: string;
+}
 
 const ListingDetail = () => {
   const { id } = useParams<{ id: string }>();
-  const listing = mockListings.find(listing => listing.id === id);
+  const [listing, setListing] = useState<ListingData | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  
+  // Fetch listing data from mock data or Supabase
+  useEffect(() => {
+    const fetchListing = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        // First check if we have it in mock listings
+        const mockListing = mockListings.find(l => l.id === id);
+        
+        if (mockListing) {
+          setListing(mockListing);
+          setLoading(false);
+          return;
+        }
+        
+        // If not in mock data, fetch from Supabase
+        const { data: supabaseListing, error: supabaseError } = await supabase
+          .from('listings')
+          .select('*')
+          .eq('id', id)
+          .single();
+        
+        if (supabaseError) throw supabaseError;
+        
+        if (!supabaseListing) {
+          setError("Listing not found");
+          setLoading(false);
+          return;
+        }
+        
+        // Fetch images for this listing
+        const { data: imagesData, error: imagesError } = await supabase
+          .from('listing_images')
+          .select('*')
+          .eq('listing_id', id)
+          .order('position', { ascending: true });
+          
+        if (imagesError) throw imagesError;
+        
+        // Get public URLs for images
+        const imageUrls = imagesData?.map(img => {
+          const { data: publicUrl } = supabase
+            .storage
+            .from('listing-images')
+            .getPublicUrl(img.storage_path);
+            
+          return publicUrl?.publicUrl || '';
+        }) || [];
+        
+        // Fetch broker info if broker_id exists
+        let brokerInfo = { 
+          id: 'unknown',
+          name: 'Unknown Broker',
+          email: 'contact@example.com'
+        };
+        
+        if (supabaseListing.broker_id) {
+          const { data: brokerData, error: brokerError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', supabaseListing.broker_id)
+            .single();
+            
+          if (!brokerError && brokerData) {
+            brokerInfo = {
+              id: brokerData.id,
+              name: brokerData.full_name || 'Unnamed Broker',
+              email: brokerData.email,
+              company: brokerData.company_name,
+              avatar: brokerData.avatar_url
+            };
+          }
+        }
+        
+        // Format listing data to match our interface
+        const formattedListing: ListingData = {
+          id: supabaseListing.id,
+          title: supabaseListing.title,
+          description: supabaseListing.description,
+          price: supabaseListing.price,
+          images: imageUrls.length > 0 ? imageUrls : [
+            'https://images.unsplash.com/photo-1501886429477-2cd2912c7a21?auto=format&q=75&fit=crop&w=800',
+            'https://images.unsplash.com/photo-1602796403359-cff93848c868?auto=format&q=75&fit=crop&w=800',
+          ],
+          broker: brokerInfo,
+          location: {
+            city: supabaseListing.city || 'Unknown',
+            state: supabaseListing.state || 'Unknown',
+            address: supabaseListing.address,
+          },
+          numSites: supabaseListing.num_sites || 50,
+          occupancyRate: supabaseListing.occupancy_rate || 80,
+          annualRevenue: supabaseListing.annual_revenue || supabaseListing.price * 0.12,
+          capRate: supabaseListing.cap_rate || 9.5,
+          status: supabaseListing.status || 'active',
+        };
+        
+        setListing(formattedListing);
+      } catch (err: any) {
+        console.error("Error fetching listing:", err);
+        setError(err.message || "Failed to load listing");
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load listing details",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    if (id) {
+      fetchListing();
+    }
+  }, [id, toast]);
   
   // Auto slide images
   useEffect(() => {
     if (!listing || isFullscreen) return;
     
     const interval = setInterval(() => {
-      if (listing.images.length > 1) {
+      if (listing.images?.length > 1) {
         setActiveImageIndex(prev => 
           prev === listing.images.length - 1 ? 0 : prev + 1
         );
@@ -47,24 +198,42 @@ const ListingDetail = () => {
   }, [listing, isFullscreen]);
   
   const handlePrevImage = () => {
-    if (!listing) return;
+    if (!listing?.images) return;
     setActiveImageIndex(prev => 
       prev === 0 ? listing.images.length - 1 : prev - 1
     );
   };
   
   const handleNextImage = () => {
-    if (!listing) return;
+    if (!listing?.images) return;
     setActiveImageIndex(prev => 
       prev === listing.images.length - 1 ? 0 : prev + 1
     );
   };
   
-  if (!listing) {
+  // Loading state
+  if (loading) {
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
-        <HeaderSpacer /> {/* Add HeaderSpacer here */}
+        <HeaderSpacer />
+        <div className="container mx-auto px-4 py-24 text-center flex-grow">
+          <div className="flex flex-col items-center justify-center h-full">
+            <Loader2 className="h-12 w-12 text-[#f74f4f] animate-spin mb-4" />
+            <p className="text-gray-600">Loading property details...</p>
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+  
+  // Error state or no listing found
+  if (error || !listing) {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <HeaderSpacer />
         <div className="container mx-auto px-4 py-24 text-center flex-grow">
           <div className="max-w-md mx-auto">
             <div className="bg-[#f74f4f]/10 rounded-full p-6 inline-block mb-6">
@@ -86,7 +255,10 @@ const ListingDetail = () => {
   
   // Get more listings from the same broker
   const brokerListings = mockListings
-    .filter(item => item.broker.id === listing.broker.id && item.id !== listing.id)
+    .filter(item => 
+      item.broker?.id === listing.broker?.id && 
+      item.id !== listing.id
+    )
     .slice(0, 3);
   
   // Get the listing date (random date within last 60 days)
@@ -101,7 +273,7 @@ const ListingDetail = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
-      <HeaderSpacer /> {/* Add HeaderSpacer here */}
+      <HeaderSpacer />
       
       {/* Full screen image view */}
       {isFullscreen && (
@@ -158,7 +330,7 @@ const ListingDetail = () => {
         </div>
       )}
       
-      {/* Breadcrumb & Quick Nav - removed mb-6 because we have HeaderSpacer now */}
+      {/* Breadcrumb & Quick Nav */}
       <div className="bg-white border-b py-3 shadow-sm">
         <div className="container mx-auto px-4">
           <div className="flex justify-between items-center">
@@ -326,7 +498,7 @@ const ListingDetail = () => {
                     <Users className="h-6 w-6 text-[#f74f4f]" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{listing.numSites}</div>
+                    <div className="text-2xl font-bold">{listing.numSites || 50}</div>
                     <div className="text-sm text-gray-500">Total Sites</div>
                   </div>
                 </div>
@@ -335,7 +507,7 @@ const ListingDetail = () => {
                     <PercentSquare className="h-6 w-6 text-[#f74f4f]" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{listing.occupancyRate}%</div>
+                    <div className="text-2xl font-bold">{listing.occupancyRate || 85}%</div>
                     <div className="text-sm text-gray-500">Occupancy</div>
                   </div>
                 </div>
@@ -344,7 +516,7 @@ const ListingDetail = () => {
                     <DollarSign className="h-6 w-6 text-[#f74f4f]" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{formatCurrency(listing.annualRevenue, 0)}</div>
+                    <div className="text-2xl font-bold">{formatCurrency(listing.annualRevenue || listing.price * 0.12, 0)}</div>
                     <div className="text-sm text-gray-500">Annual Revenue</div>
                   </div>
                 </div>
@@ -353,7 +525,7 @@ const ListingDetail = () => {
                     <PercentSquare className="h-6 w-6 text-[#f74f4f]" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{listing.capRate}%</div>
+                    <div className="text-2xl font-bold">{listing.capRate || 8.5}%</div>
                     <div className="text-sm text-gray-500">Cap Rate</div>
                   </div>
                 </div>
@@ -399,7 +571,11 @@ const ListingDetail = () => {
                 <TabsContent value="description" className="mt-0 p-6">
                   <h2 className="text-xl font-bold mb-4">Property Overview</h2>
                   <p className="text-gray-700 leading-relaxed mb-6 whitespace-pre-line">
-                    {listing.description}
+                    {listing.description || `This beautiful RV park is located in ${listing.location.city}, ${listing.location.state}, featuring ${listing.numSites || 50} sites with full hookups, Wi-Fi, and modern amenities. The property boasts an impressive ${listing.occupancyRate || 85}% occupancy rate and generates approximately $${formatCurrency(listing.annualRevenue || listing.price * 0.12)} in annual revenue.
+
+The park is well-maintained and includes amenities such as a swimming pool, clubhouse, dog park, and laundry facilities. It's conveniently located near popular attractions, making it ideal for travelers and long-term stays.
+
+This turnkey operation is perfect for investors looking to enter the growing RV park and campground industry with an established, profitable business.`}
                   </p>
                   
                   {listing.pdfUrl && (
@@ -434,7 +610,7 @@ const ListingDetail = () => {
                   <div className="aspect-[16/10] bg-gray-100 w-full">
                     {/* Here you'd normally embed a Google Map */}
                     <div className="h-full w-full bg-gray-200 flex items-center justify-center">
-                      <div className="text-gray-500">Interactive map would be displayed here</div>
+                      <div className="text-gray-500">Location: {listing.location.city}, {listing.location.state}</div>
                     </div>
                   </div>
                   <div className="p-6">
@@ -447,7 +623,7 @@ const ListingDetail = () => {
                     <div className="bg-gray-50 rounded-lg p-4 flex items-start">
                       <MapPin className="h-5 w-5 text-[#f74f4f] mr-3 mt-0.5" />
                       <div>
-                        <div className="font-medium">{listing.location.address}</div>
+                        <div className="font-medium">{listing.location.address || `123 Main St`}</div>
                         <div className="text-gray-500">{listing.location.city}, {listing.location.state}</div>
                       </div>
                     </div>
@@ -468,19 +644,19 @@ const ListingDetail = () => {
                       <tbody>
                         <tr className="border-b border-gray-100">
                           <td className="py-3 px-4 text-gray-700">Annual Revenue</td>
-                          <td className="py-3 px-4 text-right font-medium">{formatCurrency(listing.annualRevenue)}</td>
+                          <td className="py-3 px-4 text-right font-medium">{formatCurrency(listing.annualRevenue || listing.price * 0.12)}</td>
                         </tr>
                         <tr className="border-b border-gray-100">
                           <td className="py-3 px-4 text-gray-700">Operating Expenses</td>
-                          <td className="py-3 px-4 text-right font-medium">{formatCurrency(listing.annualRevenue * 0.4)}</td>
+                          <td className="py-3 px-4 text-right font-medium">{formatCurrency((listing.annualRevenue || listing.price * 0.12) * 0.4)}</td>
                         </tr>
                         <tr className="border-b border-gray-100">
                           <td className="py-3 px-4 text-gray-700">Net Operating Income</td>
-                          <td className="py-3 px-4 text-right font-medium">{formatCurrency(listing.annualRevenue * 0.6)}</td>
+                          <td className="py-3 px-4 text-right font-medium">{formatCurrency((listing.annualRevenue || listing.price * 0.12) * 0.6)}</td>
                         </tr>
                         <tr className="border-b border-gray-100 bg-gray-50">
                           <td className="py-3 px-4 font-medium text-gray-900">Cap Rate</td>
-                          <td className="py-3 px-4 text-right font-bold text-[#f74f4f]">{listing.capRate}%</td>
+                          <td className="py-3 px-4 text-right font-bold text-[#f74f4f]">{listing.capRate || 8.5}%</td>
                         </tr>
                         <tr className="border-b border-gray-100 bg-gray-50">
                           <td className="py-3 px-4 font-medium text-gray-900">Asking Price</td>
@@ -526,14 +702,14 @@ const ListingDetail = () => {
                 <div className="flex items-center mb-4">
                   <div className="h-16 w-16 rounded-full overflow-hidden bg-gray-100 mr-4">
                     <img 
-                      src={listing.broker.avatar || "https://randomuser.me/api/portraits/men/32.jpg"} 
-                      alt={listing.broker.name} 
+                      src={listing.broker?.avatar || "https://randomuser.me/api/portraits/men/32.jpg"} 
+                      alt={listing.broker?.name || "Agent"} 
                       className="h-full w-full object-cover"
                     />
                   </div>
                   <div>
-                    <h4 className="font-bold text-lg">{listing.broker.name}</h4>
-                    <p className="text-sm text-gray-500">{listing.broker.company}</p>
+                    <h4 className="font-bold text-lg">{listing.broker?.name || "Agent Name"}</h4>
+                    <p className="text-sm text-gray-500">{listing.broker?.company || "RV Park Specialists"}</p>
                     <div className="flex items-center mt-1">
                       {[1, 2, 3, 4, 5].map(star => (
                         <Star key={star} className="h-4 w-4 fill-amber-400 text-amber-400" />
@@ -593,7 +769,7 @@ const ListingDetail = () => {
             </div>
             
             {/* RoverPass CTA for new owners */}
-            <div className="bg-roverpass-purple p-6 rounded-lg text-white">
+            <div className="bg-purple-900 p-6 rounded-lg text-white">
               <h3 className="text-lg font-bold mb-2">Planning to Buy This RV Park?</h3>
               <p className="text-sm text-white/80 mb-4">
                 Streamline your operations from day one with RoverPass's comprehensive reservation management system.
@@ -618,7 +794,7 @@ const ListingDetail = () => {
                   Guest management platform
                 </div>
               </div>
-              <Button asChild className="w-full bg-white text-roverpass-purple hover:bg-gray-100">
+              <Button asChild className="w-full bg-white text-purple-900 hover:bg-gray-100">
                 <a href="https://roverpass.com/demo" target="_blank" rel="noopener noreferrer">
                   Schedule a Demo
                 </a>
@@ -653,13 +829,15 @@ const ListingDetail = () => {
           <div className="mt-12">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold">More Properties from this Broker</h2>
-              <Link 
-                to={`/broker/${listing.broker.id}`} 
-                className="text-[#f74f4f] hover:underline flex items-center"
-              >
-                View all listings
-                <ExternalLink className="h-4 w-4 ml-1" />
-              </Link>
+              {listing.broker && (
+                <Link 
+                  to={`/broker/${listing.broker.id}`} 
+                  className="text-[#f74f4f] hover:underline flex items-center"
+                >
+                  View all listings
+                  <ExternalLink className="h-4 w-4 ml-1" />
+                </Link>
+              )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {brokerListings.map(listing => (

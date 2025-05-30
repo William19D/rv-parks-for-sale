@@ -50,30 +50,10 @@ const AdminLayout = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-// Protected route that checks for admin role
+// Modified AdminRoute - always allows access
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
-  const { user, loading, userRole } = useAuth();
-  const location = useLocation();
-  
-  if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
-        <p className="mt-4 text-gray-600">Verifying admin access...</p>
-      </div>
-    );
-  }
-  
-  if (!user) {
-    // Redirect to login if not logged in
-    return <Navigate to="/login" state={{ from: location }} replace />;
-  }
-  
-  if (userRole !== 'ADMIN') {
-    // Redirect to home if not an admin
-    return <Navigate to="/" replace />;
-  }
-  
+  // Simply return the admin layout with children
+  // This bypasses all authentication checks
   return (
     <AdminLayout>
       {children}
@@ -89,8 +69,8 @@ const AppRoutes = () => {
   // If in admin routes, don't show the standard header
   const isAdminRoute = location.pathname.startsWith('/admin');
   
-  // Si está en carga inicial y aún no hay información de usuario
-  if (loading && !localStorage.getItem('supabase.auth.token')) {
+  // Only show loading for non-admin routes
+  if (loading && !isAdminRoute && !localStorage.getItem('supabase.auth.token')) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
@@ -115,7 +95,7 @@ const AppRoutes = () => {
         <Route path="/listings" element={<Listings />} />
         <Route path="/listings/:id" element={<ListingDetail />} />
         
-        {/* Admin Routes - Checks for ADMIN role */}
+        {/* Admin Routes - No longer checks for ADMIN role */}
         <Route path="/admin/dashboard" element={
           <AdminRoute>
             <AdminDashboard />

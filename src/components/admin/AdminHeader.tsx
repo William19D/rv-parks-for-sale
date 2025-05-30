@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,10 +12,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Bell, User, LogOut, Settings, ChevronDown } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 export function AdminHeader() {
   const { user, signOut } = useAuth();
   const [scrolled, setScrolled] = useState(false);
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
   // Handle scroll for sticky header effect
   useEffect(() => {
@@ -26,6 +30,37 @@ export function AdminHeader() {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Enhanced logout function that ensures redirection
+  const handleLogout = async () => {
+    try {
+      // Call Supabase auth signOut directly
+      await supabase.auth.signOut();
+      
+      // Clear all auth-related localStorage items
+      localStorage.removeItem('userRole');
+      localStorage.removeItem('forceAdmin');
+      localStorage.removeItem('bypassAuth');
+      
+      // Show success toast
+      toast({
+        title: "Logged Out",
+        description: "You have been successfully logged out",
+      });
+      
+      // Force navigation to home page
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 500);
+    } catch (error) {
+      console.error("Error signing out:", error);
+      toast({
+        title: "Error",
+        description: "There was a problem logging out. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <header 
@@ -52,13 +87,13 @@ export function AdminHeader() {
               <Button variant="ghost" className="flex items-center gap-2">
                 <Avatar className="h-8 w-8">
                   <AvatarFallback className="bg-[#f74f4f]/10 text-[#f74f4f]">
-                    {user?.email?.[0].toUpperCase() || 'A'}
+                    {user?.email?.[0]?.toUpperCase() || 'A'}
                   </AvatarFallback>
                 </Avatar>
                 <div className="hidden md:block text-left">
                   <p className="text-sm font-medium">Admin</p>
                   <p className="text-xs text-muted-foreground truncate max-w-[150px]">
-                    {user?.email}
+                    {user?.email || 'admin@example.com'}
                   </p>
                 </div>
                 <ChevronDown className="h-4 w-4 opacity-50" />
@@ -81,8 +116,8 @@ export function AdminHeader() {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                className="text-red-600 focus:text-red-600"
-                onClick={() => signOut()}
+                className="text-red-600 focus:text-red-600 cursor-pointer"
+                onClick={handleLogout}
               >
                 <LogOut className="mr-2 h-4 w-4" />
                 <span>Log Out</span>
