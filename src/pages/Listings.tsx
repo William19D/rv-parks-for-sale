@@ -4,14 +4,14 @@ import { Footer } from "@/components/layout/Footer";
 import { ListingCard } from "@/components/listings/ListingCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { filterListings } from "@/lib/utils";
-import { mockListings, FilterOptions, initialFilterOptions, states } from "@/data/mockListings";
+import { FilterOptions, initialFilterOptions, states } from "@/data/mockListings";
+import { fetchApprovedListings, Listing as ServiceListing } from "@/services/listingService";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Search, MapPin, Grid, Map, X, ArrowUpDown, 
   SlidersHorizontal, Save, Clock, Star, Percent, 
   Users, DollarSign, Calendar, Filter, ChevronDown,
-  BarChart3, Zap, Bookmark, Eye, Building, Home
+  BarChart3, Zap, Bookmark, Eye, Building, Home, AlertCircle
 } from "lucide-react";
 import {
   Select,
@@ -53,88 +53,11 @@ import { RangeSlider } from "@/lib/RangeSlider";
 import * as SliderPrimitive from '@radix-ui/react-slider';
 
 // Improved component for header spacing
-const HeaderSpacer = () => {
-  // Start with a generous default height to prevent layout jumps
-  const [height, setHeight] = useState(100); 
-  const spacerRef = useRef<HTMLDivElement>(null);
-  const observerRef = useRef<MutationObserver | null>(null);
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
-  useEffect(() => {
-    // Function to update the height based on the header element
-    const updateHeight = () => {
-      const headerElement = document.getElementById('main-header');
-      if (headerElement) {
-        // Add a small buffer (5px) to ensure we have enough space
-        const headerHeight = headerElement.offsetHeight + 5;
-        setHeight(headerHeight);
-        
-        // Apply the height directly to the DOM for immediate effect
-        if (spacerRef.current) {
-          spacerRef.current.style.height = `${headerHeight}px`;
-        }
-      }
-    };
+// Updated to use ServiceListing type from the service
+type Listing = ServiceListing;
 
-    // Update height immediately and on window resize
-    updateHeight();
-    
-    // Set up a resize observer for the header element
-    const headerElement = document.getElementById('main-header');
-    if (headerElement && 'ResizeObserver' in window) {
-      resizeObserverRef.current = new ResizeObserver(() => {
-        updateHeight();
-      });
-      resizeObserverRef.current.observe(headerElement);
-    }
-    
-    // Also listen for window resize events
-    window.addEventListener('resize', updateHeight);
-    
-    // Set up a mutation observer to watch for changes in the header
-    if (headerElement) {
-      observerRef.current = new MutationObserver(() => {
-        // Use setTimeout to ensure we get the final height after DOM updates
-        setTimeout(updateHeight, 50);
-      });
-      
-      observerRef.current.observe(headerElement, { 
-        attributes: true,
-        childList: true,
-        subtree: true,
-        characterData: true
-      });
-    }
-    
-    // Force multiple recalculations after load to catch any dynamic changes
-    setTimeout(updateHeight, 100);
-    setTimeout(updateHeight, 500);
-    setTimeout(updateHeight, 1000);
-
-    return () => {
-      window.removeEventListener('resize', updateHeight);
-      
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-      
-      if (resizeObserverRef.current) {
-        resizeObserverRef.current.disconnect();
-      }
-    };
-  }, []);
-
-  return (
-    <div 
-      ref={spacerRef} 
-      style={{ height: `${height}px`, minHeight: '80px' }} 
-      className="w-full"
-      aria-hidden="true"
-    />
-  );
-};
-
-// Tipos personalizados para propiedades adicionales
+// Extended filter options with additional filters
 interface ExtendedFilterOptions extends FilterOptions {
   states: string[];
   types: string[];
@@ -150,9 +73,10 @@ interface ExtendedFilterOptions extends FilterOptions {
   viewedLast: number | null;
 }
 
-// Valores iniciales extendidos
+// Updated initial filters with a 50M maximum price
 const initialExtendedFilters: ExtendedFilterOptions = {
   ...initialFilterOptions,
+  priceMax: 50000000, // Set maximum price to 50M as requested
   states: [],
   types: [],
   features: [],
@@ -211,21 +135,33 @@ const savedSearches = [
   { name: "Campgrounds Under $2M", count: 23, lastUpdated: "3 days ago" }
 ];
 
-// Recently viewed listings (mock data)
-const recentlyViewedListings = mockListings.slice(0, 3).map(listing => ({
-  ...listing,
-  viewedOn: new Date().toLocaleDateString()
-}));
+// Updated price range marks with 50M max
+const priceMarks = [
+  { value: 0, label: '$0' },
+  { value: 10000000, label: '$10M' },
+  { value: 20000000, label: '$20M' },
+  { value: 30000000, label: '$30M' },
+  { value: 40000000, label: '$40M' },
+  { value: 50000000, label: '$50M' },
+];
 
 const Listings = () => {
   // Base and extended filter states
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>(initialFilterOptions);
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
+    ...initialFilterOptions,
+    priceMax: 50000000 // Set maximum price to 50M as requested
+  });
   const [extendedFilters, setExtendedFilters] = useState<ExtendedFilterOptions>(initialExtendedFilters);
   
-  const [filteredListings, setFilteredListings] = useState(mockListings);
+  // State for listings data
+  const [listings, setListings] = useState<Listing[]>([]);
+  const [filteredListings, setFilteredListings] = useState<Listing[]>([]);
+  const [recentlyViewedListings, setRecentlyViewedListings] = useState<Listing[]>([]);
+  
   const [view, setView] = useState<'grid' | 'map'>('grid');
   const [sortBy, setSortBy] = useState<string>("newest");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -243,15 +179,37 @@ const Listings = () => {
   const formatPercent = (value: number) => {
     return `${value}%`;
   };
-
-  // Price range marks
-  const priceMarks = [
-    { value: 0, label: '$0' },
-    { value: 2500000, label: '$2.5M' },
-    { value: 5000000, label: '$5M' },
-    { value: 7500000, label: '$7.5M' },
-    { value: 10000000, label: '$10M' },
-  ];
+  
+  // Initial fetch of all approved listings
+  useEffect(() => {
+    const loadListings = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch all approved listings with max price of 50M
+        const data = await fetchApprovedListings({ priceMax: 50000000 });
+        setListings(data);
+        setFilteredListings(data);
+        
+        // Set recently viewed listings (first 3 for demo)
+        if (data.length > 0) {
+          const recentViewed = data.slice(0, 3).map(listing => ({
+            ...listing,
+            viewedOn: new Date().toLocaleDateString()
+          }));
+          setRecentlyViewedListings(recentViewed);
+        }
+        
+        setError(null);
+      } catch (err) {
+        console.error('Error loading listings:', err);
+        setError('Failed to load listings. Please try again later.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadListings();
+  }, []);
   
   // Track active filters
   useEffect(() => {
@@ -270,89 +228,92 @@ const Listings = () => {
     setActiveFilters(active);
   }, [extendedFilters, search]);
 
-  // Apply filters with loading state
+  // Apply filters using the listing service
   useEffect(() => {
     const applyFilters = async () => {
-  setIsLoading(true);
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 600));
-  
-  // Update the search in filterOptions
-  const updatedFilterOptions = {
-    ...filterOptions,
-    search: search || extendedFilters.search,
-    priceMin: extendedFilters.priceMin,
-    priceMax: extendedFilters.priceMax
-  };
-  
-  let filtered = filterListings(mockListings, updatedFilterOptions);
-  
-  // Apply extended filters
-  if (extendedFilters.states.length > 0) {
-    filtered = filtered.filter(listing => 
-      extendedFilters.states.includes(listing.location.state)
-    );
-  }
-  
-  if (extendedFilters.types.length > 0) {
-    filtered = filtered.filter(listing => {
-      // Mock implementation - adjust for your actual data
-      const listingType = listing.title.includes("RV") ? "RV Park" : 
-                         listing.title.includes("Camp") ? "Campground" : "Resort";
-      return extendedFilters.types.includes(listingType);
-    });
-  }
-  
-  if (extendedFilters.features.length > 0) {
-    filtered = filtered.filter(listing => {
-      return extendedFilters.features.some(feature => 
-        listing.description.toLowerCase().includes(feature.toLowerCase())
-      );
-    });
-  }
-  
-  // Filter by site count
-  filtered = filtered.filter(listing => 
-    listing.numSites >= extendedFilters.sitesMin && 
-    listing.numSites <= extendedFilters.sitesMax
-  );
-  
-  // Filter by cap rate
-  if (extendedFilters.capRateMin > 0) {
-    filtered = filtered.filter(listing => listing.capRate >= extendedFilters.capRateMin);
-  }
-  
-  // Filter by occupancy
-  if (extendedFilters.occupancyRateMin > 0) {
-    filtered = filtered.filter(listing => listing.occupancyRate >= extendedFilters.occupancyRateMin);
-  }
-  
-  // Filter by listing date
-  if (extendedFilters.listedWithinDays) {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - extendedFilters.listedWithinDays);
-    filtered = filtered.filter(listing => new Date(listing.createdAt) >= cutoffDate);
-  }
-  
-  // Filter by annual revenue - AGREGADO
-  if (extendedFilters.revenueMin > initialExtendedFilters.revenueMin || 
-      extendedFilters.revenueMax < initialExtendedFilters.revenueMax) {
-    filtered = filtered.filter(listing => {
-      // Si tus datos no tienen un campo annualRevenue, puedes usar un valor calculado
-      // como aproximación, por ejemplo el 10% del precio como ingreso anual estimado
-      const revenue = listing.annualRevenue || listing.price * 0.1;
-      return revenue >= extendedFilters.revenueMin && revenue <= extendedFilters.revenueMax;
-    });
-  }
-  
-  // Apply sorting
-  filtered = sortListings(filtered, sortBy);
-  
-  setFilteredListings(filtered);
-  setIsLoading(false);
-};
+      setIsLoading(true);
+      
+      try {
+        // Build filter object for Supabase query
+        const filterObject: any = {  // Use any temporarily, or create a proper interface
+        priceMin: extendedFilters.priceMin,
+        priceMax: extendedFilters.priceMax,
+        sitesMin: extendedFilters.sitesMin,
+        sitesMax: extendedFilters.sitesMax,
+        capRateMin: extendedFilters.capRateMin,
+        occupancyRateMin: extendedFilters.occupancyRateMin,
+        search: search || extendedFilters.search,
+        state: undefined  // Add this property with undefined default
+      };
+
+      // Now set the state property if applicable
+      if (extendedFilters.states.length === 1) {
+        filterObject.state = extendedFilters.states[0];
+      }
+              
+        // Fetch filtered listings from Supabase
+        let filtered = await fetchApprovedListings(filterObject);
+        
+        // Apply any client-side filters that can't be done efficiently in the DB
+        
+        // Filter by multiple states if more than one selected
+        if (extendedFilters.states.length > 1) {
+          filtered = filtered.filter(listing => 
+            extendedFilters.states.includes(listing.location.state)
+          );
+        }
+        
+        // Filter by property types
+        if (extendedFilters.types.length > 0) {
+          filtered = filtered.filter(listing => {
+            const listingType = listing.title.includes("RV") ? "RV Park" : 
+                             listing.title.includes("Camp") ? "Campground" : "Resort";
+            return extendedFilters.types.includes(listingType);
+          });
+        }
+        
+        // Filter by features/amenities
+        if (extendedFilters.features.length > 0) {
+          filtered = filtered.filter(listing => {
+            return extendedFilters.features.some(feature => 
+              listing.description.toLowerCase().includes(feature.toLowerCase())
+            );
+          });
+        }
+        
+        // Filter by listing date
+        if (extendedFilters.listedWithinDays) {
+          const cutoffDate = new Date();
+          cutoffDate.setDate(cutoffDate.getDate() - extendedFilters.listedWithinDays);
+          filtered = filtered.filter(listing => new Date(listing.createdAt) >= cutoffDate);
+        }
+        
+        // Filter by annual revenue
+        if (extendedFilters.revenueMin > initialExtendedFilters.revenueMin || 
+            extendedFilters.revenueMax < initialExtendedFilters.revenueMax) {
+          filtered = filtered.filter(listing => {
+            const revenue = listing.annualRevenue || listing.price * 0.1;
+            return revenue >= extendedFilters.revenueMin && revenue <= extendedFilters.revenueMax;
+          });
+        }
+        
+        // Apply sorting
+        filtered = sortListings(filtered, sortBy);
+        
+        setFilteredListings(filtered);
+        setError(null);
+      } catch (err) {
+        console.error('Error applying filters:', err);
+        setError('Failed to filter listings. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
     
-    applyFilters();
+    // Debounce filter changes to prevent too many API calls
+    const timeoutId = setTimeout(applyFilters, 300);
+    return () => clearTimeout(timeoutId);
+    
   }, [filterOptions, extendedFilters, sortBy, search]);
   
   const handleFilterChange = (updates: Partial<ExtendedFilterOptions>) => {
@@ -375,7 +336,10 @@ const Listings = () => {
   
   const clearFilters = () => {
     setExtendedFilters(initialExtendedFilters);
-    setFilterOptions(initialFilterOptions);
+    setFilterOptions({
+      ...initialFilterOptions,
+      priceMax: 50000000 // Maintain the 50M max price when clearing filters
+    });
     setSearch('');
     setPriceMinInput(initialExtendedFilters.priceMin.toString());
     setPriceMaxInput(initialExtendedFilters.priceMax.toString());
@@ -423,7 +387,7 @@ const Listings = () => {
     }
   };
   
-  const sortListings = (listings: typeof mockListings, sortType: string) => {
+  const sortListings = (listings: Listing[], sortType: string) => {
     const sorted = [...listings];
     switch (sortType) {
       case "newest":
@@ -488,8 +452,13 @@ const Listings = () => {
         ? Math.max(0, Number(priceMinInput.replace(/[^\d]/g, ''))) 
         : Math.max(0, Number(priceMaxInput.replace(/[^\d]/g, '')));
       
-      if (!isNaN(numValue)) {
-        handleFilterChange(isMin ? { priceMin: numValue } : { priceMax: numValue });
+      // Enforce the 50M maximum price
+      const finalValue = isMin 
+        ? numValue 
+        : Math.min(numValue, 50000000);
+      
+      if (!isNaN(finalValue)) {
+        handleFilterChange(isMin ? { priceMin: finalValue } : { priceMax: finalValue });
       }
     } catch (e) {
       // Reset to current filter value on error
@@ -540,7 +509,6 @@ const Listings = () => {
         </div>
         
         {/* Improved HeaderSpacer to create space for the fixed header */}
-        <HeaderSpacer />
         
         {/* Hero Header with enhanced gradient */}
         <div className="relative bg-gradient-to-r from-[#f74f4f] to-[#ff7a45] py-12 md:py-16">
@@ -621,6 +589,17 @@ const Listings = () => {
         
         {/* Main Content Area */}
         <div className="container mx-auto px-4 py-6">
+          {/* Error message if API call fails */}
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+              <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-medium text-red-800">Error</h3>
+                <p className="text-red-600">{error}</p>
+              </div>
+            </div>
+          )}
+          
           {/* Recently viewed section (collapsible) */}
           {showRecentlyViewed && recentlyViewedListings.length > 0 && (
             <div className="mb-6 bg-white rounded-lg shadow-sm border overflow-hidden">
@@ -649,7 +628,7 @@ const Listings = () => {
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-sm truncate">{listing.title}</p>
                       <p className="text-[#f74f4f] text-sm font-semibold">{formatCurrency(listing.price)}</p>
-                      <p className="text-gray-500 text-xs">Viewed on {listing.viewedOn}</p>
+                      <p className="text-gray-500 text-xs">Viewed on {(listing as any).viewedOn || 'recently'}</p>
                     </div>
                   </div>
                 ))}
@@ -663,7 +642,9 @@ const Listings = () => {
               <div className="flex items-center space-x-2 mb-2">
                 <MapPin className="h-4 w-4 text-[#f74f4f]" />
                 <h2 className="text-lg font-medium">
-                  Showing {filteredListings.length} properties
+                  {isLoading 
+                    ? "Loading properties..." 
+                    : `Showing ${filteredListings.length} properties`}
                 </h2>
                 {!showRecentlyViewed && recentlyViewedListings.length > 0 && (
                   <button 
@@ -794,8 +775,8 @@ const Listings = () => {
                             </div>
                             <RangeSlider
                               min={0}
-                              max={10000000}
-                              step={100000}
+                              max={50000000}
+                              step={1000000}
                               value={[extendedFilters.priceMin, extendedFilters.priceMax]}
                               onValueChange={(value) => {
                                 handleFilterChange({
@@ -1069,8 +1050,8 @@ const Listings = () => {
                             </div>
                             <RangeSlider
                               min={0}
-                              max={10000000}
-                              step={100000}
+                              max={50000000}
+                              step={1000000}
                               value={[extendedFilters.priceMin, extendedFilters.priceMax]}
                               onValueChange={(value) => {
                                 handleFilterChange({
@@ -1113,7 +1094,12 @@ const Listings = () => {
                           
                           {/* Occupancy Rate */}
                           <div className="space-y-4">
-                            <Label className="text-base font-medium">Minimum Occupancy Rate</Label>
+                            <div className="flex items-center justify-between">
+                              <Label className="text-sm font-medium">Minimum Occupancy Rate</Label>
+                              <span className="text-sm font-medium">
+                                {extendedFilters.occupancyRateMin}%+
+                              </span>
+                            </div>
                             <RangeSlider
                               min={0}
                               max={100}
@@ -1137,7 +1123,12 @@ const Listings = () => {
                           
                           {/* Annual Revenue */}
                           <div className="space-y-4">
-                            <Label className="text-base font-medium">Annual Revenue</Label>
+                            <div className="flex items-center justify-between">
+                              <Label className="text-sm font-medium">Annual Revenue</Label>
+                              <div className="text-xs text-gray-500">
+                                {formatCurrency(extendedFilters.revenueMin)} - {formatCurrency(extendedFilters.revenueMax)}
+                              </div>
+                            </div>
                             <RangeSlider
                               min={0}
                               max={5000000}
@@ -1262,7 +1253,7 @@ const Listings = () => {
                   {/* Price Range Slider with Input Fields */}
                   <div className="w-72">
                     <div className="flex justify-between items-center mb-2">
-                      <Label className="text-sm font-medium">Price Range</Label>
+                      <Label className="text-sm font-medium">Price Range (up to $50M)</Label>
                       <div className="flex gap-2 items-center">
                         <Input
                           type="text"
@@ -1285,8 +1276,8 @@ const Listings = () => {
                     </div>
                     <RangeSlider
                       min={0}
-                      max={10000000}
-                      step={100000}
+                      max={50000000}
+                      step={1000000}
                       value={[extendedFilters.priceMin, extendedFilters.priceMax]}
                       onValueChange={(value) => {
                         handleFilterChange({
@@ -1308,99 +1299,99 @@ const Listings = () => {
                         <Button variant="outline" className="w-full justify-between text-left font-normal">
                           {extendedFilters.states.length 
                             ? extendedFilters.states.length > 1 
-                              ? `${extendedFilters.states.length} States` 
-                              : extendedFilters.states[0]
-                            : "All States"}
-                          <ChevronDown className="h-4 w-4 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[320px] p-0" align="start">
-                        <ScrollArea className="h-80">
-                          <div className="p-4 grid grid-cols-2 gap-2">
-                            {states.map((state) => (
-                              <div key={state} className="flex items-center space-x-2">
-                                <Checkbox
-                                  id={`desktop-state-${state}`}
-                                  checked={extendedFilters.states.includes(state)}
-                                  onCheckedChange={(checked) => {
-                                    const newStates = checked
-                                      ? [...extendedFilters.states, state]
-                                      : extendedFilters.states.filter(s => s !== state);
-                                    handleFilterChange({ states: newStates });
-                                  }}
-                                  className="data-[state=checked]:bg-[#f74f4f] data-[state=checked]:border-[#f74f4f]"
-                                />
-                                <label htmlFor={`desktop-state-${state}`} className="text-sm cursor-pointer">
-                                  {state}
-                                </label>
-                              </div>
-                            ))}
-                          </div>
-                        </ScrollArea>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  
-                  {/* Property Types */}
-                  <div className="w-48">
-                    <Label className="text-sm font-medium mb-2 block">Property Type</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-between text-left font-normal">
-                          {extendedFilters.types.length 
-                            ? extendedFilters.types.length > 1 
-                              ? `${extendedFilters.types.length} Types` 
-                              : extendedFilters.types[0]
-                            : "All Types"}
-                          <ChevronDown className="h-4 w-4 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[250px] p-0">
-                        <div className="p-4">
-                          {propertyTypes.map((type) => (
-                            <div key={type.id} className="flex items-center space-x-2 mb-2">
-                              <Checkbox
-                                id={`desktop-type-${type.id}`}
-                                checked={extendedFilters.types.includes(type.label)}
-                                onCheckedChange={(checked) => {
-                                  const newTypes = checked
-                                    ? [...extendedFilters.types, type.label]
-                                    : extendedFilters.types.filter(t => t !== type.label);
-                                  handleFilterChange({ types: newTypes });
-                                }}
-                                className="data-[state=checked]:bg-[#f74f4f] data-[state=checked]:border-[#f74f4f]"
-                              />
-                              <label htmlFor={`desktop-type-${type.id}`} className="text-sm cursor-pointer flex items-center gap-1">
-  <type.icon className="h-3.5 w-3.5 text-gray-500" />
-  {type.label}
-</label>
-</div>
-))}
-</div>
-</PopoverContent>
-</Popover>
-</div>
-
-{/* Number of sites */}
-<div className="w-48">
-  <Label className="text-sm font-medium mb-2 block">Number of Sites</Label>
-  <div className="flex justify-between text-xs text-gray-500 mb-2">
-    <span>{extendedFilters.sitesMin} - {extendedFilters.sitesMax} sites</span>
+                                            ? `${extendedFilters.states.length} States` 
+              : extendedFilters.states[0]
+            : "All States"}
+          <ChevronDown className="h-4 w-4 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[320px] p-0" align="start">
+        <ScrollArea className="h-80">
+          <div className="p-4 grid grid-cols-2 gap-2">
+            {states.map((state) => (
+              <div key={state} className="flex items-center space-x-2">
+                <Checkbox
+                  id={`desktop-state-${state}`}
+                  checked={extendedFilters.states.includes(state)}
+                  onCheckedChange={(checked) => {
+                    const newStates = checked
+                      ? [...extendedFilters.states, state]
+                      : extendedFilters.states.filter(s => s !== state);
+                    handleFilterChange({ states: newStates });
+                  }}
+                  className="data-[state=checked]:bg-[#f74f4f] data-[state=checked]:border-[#f74f4f]"
+                />
+                <label htmlFor={`desktop-state-${state}`} className="text-sm cursor-pointer">
+                  {state}
+                </label>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
   </div>
-  <RangeSlider
-    min={0}
-    max={500}
-    step={10}
-    value={[extendedFilters.sitesMin, extendedFilters.sitesMax]}
-    onValueChange={(value) => {
-      handleFilterChange({
-        sitesMin: value[0],
-        sitesMax: value[1]
-      });
-    }}
-    formatValue={(value) => `${value} sites`}
-  />
-</div>
+  
+  {/* Property Types */}
+  <div className="w-48">
+    <Label className="text-sm font-medium mb-2 block">Property Type</Label>
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" className="w-full justify-between text-left font-normal">
+          {extendedFilters.types.length 
+            ? extendedFilters.types.length > 1 
+              ? `${extendedFilters.types.length} Types` 
+              : extendedFilters.types[0]
+            : "All Types"}
+          <ChevronDown className="h-4 w-4 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[250px] p-0">
+        <div className="p-4">
+          {propertyTypes.map((type) => (
+            <div key={type.id} className="flex items-center space-x-2 mb-2">
+              <Checkbox
+                id={`desktop-type-${type.id}`}
+                checked={extendedFilters.types.includes(type.label)}
+                onCheckedChange={(checked) => {
+                  const newTypes = checked
+                    ? [...extendedFilters.types, type.label]
+                    : extendedFilters.types.filter(t => t !== type.label);
+                  handleFilterChange({ types: newTypes });
+                }}
+                className="data-[state=checked]:bg-[#f74f4f] data-[state=checked]:border-[#f74f4f]"
+              />
+              <label htmlFor={`desktop-type-${type.id}`} className="text-sm cursor-pointer flex items-center gap-1">
+                <type.icon className="h-3.5 w-3.5 text-gray-500" />
+                {type.label}
+              </label>
+            </div>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  </div>
+
+  {/* Number of sites */}
+  <div className="w-48">
+    <Label className="text-sm font-medium mb-2 block">Number of Sites</Label>
+    <div className="flex justify-between text-xs text-gray-500 mb-2">
+      <span>{extendedFilters.sitesMin} - {extendedFilters.sitesMax} sites</span>
+    </div>
+    <RangeSlider
+      min={0}
+      max={500}
+      step={10}
+      value={[extendedFilters.sitesMin, extendedFilters.sitesMax]}
+      onValueChange={(value) => {
+        handleFilterChange({
+          sitesMin: value[0],
+          sitesMax: value[1]
+        });
+      }}
+      formatValue={(value) => `${value} sites`}
+    />
+  </div>
 </div>
 </TabsContent>
 
@@ -1611,6 +1602,19 @@ const Listings = () => {
       <div className="w-10 h-10 border-4 border-[#f74f4f]/20 border-t-[#f74f4f] rounded-full animate-spin mb-4"></div>
       <p className="text-muted-foreground">Searching for properties...</p>
     </div>
+  ) : error ? (
+    <div className="bg-white rounded-lg border py-16 text-center">
+      <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+        <AlertCircle className="h-8 w-8 text-red-500" />
+      </div>
+      <h2 className="text-2xl font-bold mb-2">Error Loading Listings</h2>
+      <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+        {error}
+      </p>
+      <Button onClick={() => window.location.reload()} className="bg-[#f74f4f] hover:bg-[#e43c3c]">
+        Try Again
+      </Button>
+    </div>
   ) : filteredListings.length === 0 ? (
     <div className="bg-white rounded-lg border py-16 text-center">
       <div className="mx-auto w-16 h-16 bg-[#f74f4f]/10 rounded-full flex items-center justify-center mb-4">
@@ -1722,4 +1726,5 @@ const Listings = () => {
 );
 };
 
-export default Listings;
+export default Listings; 
+                

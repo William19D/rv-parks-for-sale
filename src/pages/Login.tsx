@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,43 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Check if there's already a session on component mount
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user) {
+        // User is already logged in, check for admin role directly
+        checkAdminAndRedirect(session.user.id);
+      }
+    };
+    
+    checkSession();
+  }, []);
+  
+  // Separate function to check admin status and redirect
+  const checkAdminAndRedirect = async (userId: string) => {
+    try {
+      // Using direct SQL query instead of the standard query
+      const { data, error } = await supabase.rpc('is_admin', { 
+        user_id_param: userId 
+      });
+      
+      if (!error && data) {
+        // User is admin
+        localStorage.setItem('userRole', 'ADMIN');
+        navigate("/admin/dashboard");
+      } else {
+        // Not admin or error occurred
+        localStorage.setItem('userRole', 'USER');
+      }
+    } catch (error) {
+      console.error("Error checking admin status:", error);
+      // Default to USER
+      localStorage.setItem('userRole', 'USER');
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,7 +86,10 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      console.log(`Attempting login with email: ${email}`);
+      
+      // Sign in with Supabase
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -60,14 +100,64 @@ const Login = () => {
           description: error.message,
           variant: "destructive",
         });
+        return;
+      }
+      
+      if (!authData || !authData.user) {
+        toast({
+          title: "Error",
+          description: "Authentication failed",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      console.log(`Successfully authenticated user: ${authData.user.id}`);
+
+      // For the admin test account, force admin
+      if (email === 'admintest@admintest.com') {
+        console.log("Admin account detected");
+        localStorage.setItem('userRole', 'ADMIN');
+        
+        toast({
+          title: "Admin Access Granted",
+          description: "Welcome to the admin dashboard",
+        });
+        
+        navigate("/admin/dashboard");
+        return;
+      }
+      
+      // Use direct SQL query to check admin status
+      const { data: isAdmin, error: adminError } = await supabase.rpc('check_user_role', { 
+        user_id_param: authData.user.id,
+        role_id_param: 2 // Admin role ID
+      });
+      
+      console.log("Admin check result:", { isAdmin, adminError });
+      
+      if (!adminError && isAdmin) {
+        // User is admin
+        localStorage.setItem('userRole', 'ADMIN');
+        
+        toast({
+          title: "Admin Access Granted",
+          description: "Welcome to the admin dashboard",
+        });
+        
+        navigate("/admin/dashboard");
       } else {
+        // Not admin or error occurred
+        localStorage.setItem('userRole', 'USER');
+        
         toast({
           title: "Welcome!",
           description: "You have successfully signed in",
         });
+        
         navigate("/");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
       toast({
         title: "Error",

@@ -69,7 +69,7 @@ export const BrokerListings = () => {
               size="lg"
               asChild
             >
-              <Link to="/broker/listings/new">
+              <Link to="/listings/new">
                 <Plus className="h-5 w-5" />
                 Add New Listing
               </Link>
@@ -154,7 +154,7 @@ export const BrokerListings = () => {
               size="lg"
               asChild
             >
-              <Link to="/broker/listings/new">
+              <Link to="/listings/new">
                 <Plus className="h-5 w-5 mr-1" />
                 Create Your First Listing
               </Link>
@@ -247,7 +247,8 @@ export const BrokerListings = () => {
                               className="hover:bg-[#f74f4f]/5 text-gray-600 hover:text-[#f74f4f]"
                               asChild
                             >
-                              <Link to={`/broker/listings/edit/${listing.id}`}>
+                              {/* Updated to use the correct path for ListingEdit component */}
+                              <Link to={`/listings/${listing.id}/edit`}>
                                 <Edit className="h-4 w-4" />
                                 <span className="sr-only">Edit</span>
                               </Link>
