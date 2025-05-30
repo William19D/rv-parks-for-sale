@@ -230,7 +230,8 @@ const BrokerDashboard = () => {
             asChild 
             className="mt-4 md:mt-0 bg-[#f74f4f] hover:bg-[#e43c3c] text-white flex items-center gap-2"
           >
-            <Link to="/broker/listings/new">
+            {/* Updated to use the correct path for new listing */}
+            <Link to="/listings/new">
               <Plus className="h-4 w-4" />
               Add New Listing
             </Link>
@@ -321,7 +322,8 @@ const BrokerDashboard = () => {
                     className="bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
                     asChild
                   >
-                    <Link to="/broker/listings/new">
+                    {/* Updated to use the correct path for new listing */}
+                    <Link to="/listings/new">
                       <Plus className="h-4 w-4 mr-1" />
                       Create Your First Listing
                     </Link>
@@ -385,8 +387,9 @@ const BrokerDashboard = () => {
                               >
                                 <Eye className="h-4 w-4" />
                               </Link>
+                              {/* Updated to use the correct path for editing a listing */}
                               <Link 
-                                to={`/broker/listings/edit/${listing.id}`} 
+                                to={`/listings/${listing.id}/edit`} 
                                 className="p-1.5 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors"
                                 title="Edit listing"
                               >

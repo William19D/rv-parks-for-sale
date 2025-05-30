@@ -6,7 +6,7 @@ import { ListingCard } from "@/components/listings/ListingCard";
 import { mockListings } from "@/data/mockListings";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowRight, ChevronDown } from "lucide-react";
+import { ArrowRight, ChevronDown, Calendar, BarChart3, CreditCard, Users, CheckCircle2 } from "lucide-react";
 
 const Index = () => {
   // Get featured listings
@@ -75,7 +75,7 @@ const Index = () => {
       <section className="relative bg-gradient-to-r from-[#f74f4f] to-[#ff7a45] py-20 md:py-32 overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <img 
-            src="/placeholder.svg" 
+            src="/background.jpeg" 
             alt="RV Park Background" 
             className="w-full h-full object-cover"
           />
@@ -162,6 +162,228 @@ const Index = () => {
         </div>
       </section>
 
+      {/* RV Park Reservation Software Section - NEW */}
+      <section className="py-20 bg-white overflow-hidden">
+        <div className="container mx-auto px-4">
+          <motion.div 
+            className="text-center max-w-3xl mx-auto mb-16"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+          >
+            <h2 className="text-3xl md:text-4xl font-bold mb-6 relative inline-block">
+              The Ultimate Campground Reservation Software
+              <span className="absolute -bottom-2 left-1/4 right-1/4 h-1 bg-[#f74f4f] rounded-full"></span>
+            </h2>
+            <p className="text-lg text-muted-foreground mt-4">
+              Take full control of your campground with our industry-leading campground reservation software. 
+              Boost revenue, cut operating costs, and deliver an exceptional, seamless experience for both you and your guests.
+            </p>
+          </motion.div>
+
+          {/* Split section with image and features */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center mb-16">
+            <motion.div
+              initial={{ opacity: 0, x: -50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="order-2 lg:order-1"
+            >
+              <h3 className="text-2xl font-bold mb-6 text-[#f74f4f]">
+                What's included in our Campground Management Software?
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 rounded-full bg-[#f74f4f]/10 mt-1">
+                    <BarChart3 className="h-5 w-5 text-[#f74f4f]" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-lg">Revenue Capabilities</h4>
+                    <p className="text-muted-foreground">Drive more revenue with site locks, dynamic pricing, and add-ons</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 rounded-full bg-[#f74f4f]/10 mt-1">
+                    <Calendar className="h-5 w-5 text-[#f74f4f]" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-lg">Long-Term Stays</h4>
+                    <p className="text-muted-foreground">Manage extended bookings with recurring payments</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 rounded-full bg-[#f74f4f]/10 mt-1">
+                    <CreditCard className="h-5 w-5 text-[#f74f4f]" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-lg">Point of Sale</h4>
+                    <p className="text-muted-foreground">Sell merchandise and extras directly to your guests</p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 rounded-full bg-[#f74f4f]/10 mt-1">
+                    <Users className="h-5 w-5 text-[#f74f4f]" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-lg">Guest Management</h4>
+                    <p className="text-muted-foreground">Track preferences and simplify the booking process</p>
+                  </div>
+                </div>
+              </div>
+              
+              <Button asChild size="lg" className="mt-8 bg-[#f74f4f] hover:bg-[#e43c3c]">
+                <a href="https://www.roverpass.com/p/demo" target="_blank" rel="noopener" className="flex items-center gap-2">
+                  Book a Demo
+                  <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                </a>
+              </Button>
+            </motion.div>
+            
+            <motion.div
+              initial={{ opacity: 0, x: 50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="order-1 lg:order-2 bg-gray-100 rounded-xl p-3 shadow-lg"
+            >
+              <img 
+                src="https://placehold.co/600x400/f5f5f5/cccccc?text=Campground+Reservation+Software" 
+                alt="RoverPass Campground Reservation Software" 
+                className="w-full h-auto rounded-lg" 
+              />
+            </motion.div>
+          </div>
+          
+          {/* Key benefits */}
+          <motion.div
+            className="bg-gray-50 rounded-2xl p-8 md:p-12"
+            variants={containerVariants}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+          >
+            <h3 className="text-2xl font-bold mb-8 text-center">
+              Why RV Park Owners Love Our Software
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <motion.div variants={itemVariants} className="bg-white p-6 rounded-lg shadow-sm">
+                <div className="w-12 h-12 bg-[#f74f4f]/10 rounded-full flex items-center justify-center mb-4">
+                  <svg className="w-6 h-6 text-[#f74f4f]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h4 className="text-lg font-semibold mb-2">Increase Revenue</h4>
+                <p className="text-muted-foreground">Maximize your earnings with dynamic pricing and add-on sales</p>
+              </motion.div>
+              
+              <motion.div variants={itemVariants} className="bg-white p-6 rounded-lg shadow-sm">
+                <div className="w-12 h-12 bg-[#f74f4f]/10 rounded-full flex items-center justify-center mb-4">
+                  <svg className="w-6 h-6 text-[#f74f4f]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                </div>
+                <h4 className="text-lg font-semibold mb-2">Secure Payments</h4>
+                <p className="text-muted-foreground">Process payments securely with integrated payment solutions</p>
+              </motion.div>
+              
+              <motion.div variants={itemVariants} className="bg-white p-6 rounded-lg shadow-sm">
+                <div className="w-12 h-12 bg-[#f74f4f]/10 rounded-full flex items-center justify-center mb-4">
+                  <svg className="w-6 h-6 text-[#f74f4f]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </div>
+                <h4 className="text-lg font-semibold mb-2">Easy Bookings</h4>
+                <p className="text-muted-foreground">Simplify the reservation process for you and your guests</p>
+              </motion.div>
+              
+              <motion.div variants={itemVariants} className="bg-white p-6 rounded-lg shadow-sm">
+                <div className="w-12 h-12 bg-[#f74f4f]/10 rounded-full flex items-center justify-center mb-4">
+                  <svg className="w-6 h-6 text-[#f74f4f]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                  </svg>
+                </div>
+                <h4 className="text-lg font-semibold mb-2">Cloud-Based</h4>
+                <p className="text-muted-foreground">Access your campground data anywhere, anytime, on any device</p>
+              </motion.div>
+            </div>
+            
+            <div className="mt-10 text-center">
+              <a 
+                href="https://www.roverpass.com/p/campground-reservation-software" 
+                target="_blank" 
+                rel="noopener"
+                className="text-[#f74f4f] font-semibold hover:underline inline-flex items-center"
+              >
+                Learn more about our reservation software
+                <ArrowRight className="h-4 w-4 ml-1" />
+              </a>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Testimonials Section for Software */}
+      <section className="py-16 bg-gray-50">
+        <div className="container mx-auto px-4">
+          <motion.div
+            className="text-center mb-12"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+          >
+            <h2 className="text-3xl font-bold mb-4 relative inline-block">
+              What Campground Owners Are Saying
+              <span className="absolute -bottom-2 left-1/4 right-1/4 h-1 bg-[#f74f4f] rounded-full"></span>
+            </h2>
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto mt-4">
+              See why campground owners choose RoverPass to manage their reservations
+            </p>
+          </motion.div>
+          
+          <motion.div
+            className="grid grid-cols-1 md:grid-cols-3 gap-6"
+            variants={containerVariants}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-100px" }}
+          >
+            <motion.div variants={itemVariants} className="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition-all">
+              <div className="flex flex-col h-full">
+                <p className="italic text-gray-600 flex-grow">"RoverPass service is excellent and makes us feel that our success is really important to them. Thank You!"</p>
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <p className="font-semibold">Machille</p>
+                  <p className="text-sm text-gray-500">Freedom Lives Ranch RV Resort</p>
+                </div>
+              </div>
+            </motion.div>
+            
+            <motion.div variants={itemVariants} className="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition-all">
+              <div className="flex flex-col h-full">
+                <p className="italic text-gray-600 flex-grow">"Rover Pass has made it easy to run my RV park almost virtually."</p>
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <p className="font-semibold">Tammy</p>
+                  <p className="text-sm text-gray-500">Reel World RV Park</p>
+                </div>
+              </div>
+            </motion.div>
+            
+            <motion.div variants={itemVariants} className="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition-all">
+              <div className="flex flex-col h-full">
+                <p className="italic text-gray-600 flex-grow">"The Roverpass team is continually improving on the user friendliness of the software and the Customer Support team is great to work with."</p>
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <p className="font-semibold">Mary</p>
+                  <p className="text-sm text-gray-500">Hidden Acres RV Park</p>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        </div>
+      </section>
+      
       {/* RoverPass Features Section */}
       <section className="py-16 bg-white">
         <div className="container mx-auto px-4">
@@ -228,7 +450,7 @@ const Index = () => {
         </div>
       </section>
       
-      {/* CTA Section */}
+      {/* CTA Section - Modified to highlight both services */}
       <section className="py-16 bg-gradient-to-r from-[#f74f4f] to-[#ff7a45] relative overflow-hidden">
         {/* Moving background elements */}
         <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-white/5 blur-xl"></div>
@@ -241,16 +463,24 @@ const Index = () => {
           viewport={{ once: true, margin: "-100px" }}
           transition={{ duration: 0.6 }}
         >
-          <h2 className="text-3xl font-bold text-white mb-4">Ready to List Your RV Park?</h2>
+          <h2 className="text-3xl font-bold text-white mb-4">RV Park Solutions for Every Need</h2>
           <p className="text-xl text-white/80 mb-8 max-w-2xl mx-auto">
-            Join our network of professional brokers and reach thousands of qualified buyers.
+            Whether you're buying, selling, or managing an RV park, RoverPass has industry-leading tools to help you succeed.
           </p>
-          <Button asChild size="lg" className="bg-white text-[#f74f4f] hover:bg-gray-100 hover:shadow-lg transition-all group">
-            <Link to="/broker/dashboard" className="flex items-center gap-2">
-              Get Started
-              <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-            </Link>
-          </Button>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Button asChild size="lg" className="bg-white text-[#f74f4f] hover:bg-gray-100 hover:shadow-lg transition-all group">
+              <Link to="/listings/new" className="flex items-center gap-2">
+                Sell Your RV Park
+                <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
+            </Button>
+            <Button asChild size="lg" className="bg-white text-[#f74f4f] hover:bg-gray-100 hover:shadow-lg transition-all group">
+              <a href="https://www.roverpass.com/p/demo" target="_blank" rel="noopener" className="flex items-center gap-2">
+                Get Reservation Software
+                <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+              </a>
+            </Button>
+          </div>
         </motion.div>
       </section>
       
@@ -414,33 +644,40 @@ const Index = () => {
       </section>
       
       {/* Newsletter Section - New addition */}
-      <section className="py-16 bg-[#2d3748]">
-        <div className="container mx-auto px-4">
-          <motion.div
-            className="max-w-3xl mx-auto text-center text-white"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-          >
-            <h2 className="text-3xl font-bold mb-4">Stay Updated</h2>
-            <p className="text-xl mb-8 text-white/80">
-              Get the latest RV park listings and industry insights delivered to your inbox.
-            </p>
-            
-            <div className="flex flex-col sm:flex-row gap-3 max-w-lg mx-auto">
-              <input
-                type="email"
-                placeholder="Enter your email"
-                className="flex-1 px-4 py-3 rounded-lg text-gray-900 focus:outline-none"
-              />
-              <Button className="bg-[#f74f4f] hover:bg-[#e43c3c] text-white px-6 py-3">
-                Subscribe
-              </Button>
-            </div>
-          </motion.div>
-        </div>
-      </section>
+      {/* Newsletter Section - Updated with orange theme */}
+<section className="py-16 bg-gradient-to-r from-[#f74f4f] to-[#ff7a45] relative overflow-hidden">
+  {/* Moving background elements - matches CTA section style */}
+  <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-white/5 blur-xl"></div>
+  <div className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full bg-white/5 blur-xl"></div>
+  
+  <div className="container mx-auto px-4">
+    <motion.div
+      className="max-w-3xl mx-auto text-center text-white relative z-10"
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.6 }}
+    >
+      <h2 className="text-3xl font-bold mb-4">Stay Updated</h2>
+      <p className="text-xl mb-8 text-white/80">
+        Get the latest RV park listings and industry insights delivered to your inbox.
+      </p>
+      
+      <div className="flex flex-col sm:flex-row gap-3 max-w-lg mx-auto">
+        <input
+          type="email"
+          placeholder="Enter your email"
+          className="flex-1 px-4 py-3 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-white/50"
+        />
+        <Button 
+          className="bg-white text-[#f74f4f] hover:bg-gray-100 hover:shadow-lg transition-all"
+        >
+          Subscribe
+        </Button>
+      </div>
+    </motion.div>
+  </div>
+</section>
       
       <Footer />
     </div>

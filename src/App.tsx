@@ -4,6 +4,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
+
+// Pages
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Listings from "./pages/Listings";
@@ -16,71 +18,154 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword"; 
 import AuthenticationSuccess from "./pages/AuthenticationSuccess";
 import AuthCallback from "./pages/AuthCallback";
+// Fix: Ensure ListingEdit is properly imported
+import ListingEdit from "./pages/ListingEdit";
+
+// Admin Pages
+import AdminDashboard from "./pages/admin/Dashboard";
+import AdminListings from "./pages/admin/Listings";
+
+// Components
 import { useAuth, AuthProvider } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
+import { AdminHeader } from "@/components/admin/AdminHeader";
+import { AdminSidebar } from "@/components/admin/AdminSidebar";
 
 const queryClient = new QueryClient();
 
-// Componente que maneja las rutas protegidas
-const ProtectedRoutes = () => {
-  const { user, loading } = useAuth();
+// Admin layout component
+const AdminLayout = ({ children }: { children: React.ReactNode }) => {
+  return (
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      <AdminHeader />
+      <HeaderSpacer />
+      <div className="flex flex-1">
+        <AdminSidebar />
+        <div className="flex-1 p-6 overflow-y-auto">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Protected route that checks for admin role
+const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading, userRole } = useAuth();
   const location = useLocation();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
+        <p className="mt-4 text-gray-600">Verifying admin access...</p>
+      </div>
+    );
+  }
+  
+  if (!user) {
+    // Redirect to login if not logged in
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  
+  if (userRole !== 'ADMIN') {
+    // Redirect to home if not an admin
+    return <Navigate to="/" replace />;
+  }
+  
+  return (
+    <AdminLayout>
+      {children}
+    </AdminLayout>
+  );
+};
+
+// Componente que maneja las rutas protegidas y públicas
+const AppRoutes = () => {
+  const { user, loading, userRole } = useAuth();
+  const location = useLocation();
+  
+  // If in admin routes, don't show the standard header
+  const isAdminRoute = location.pathname.startsWith('/admin');
   
   // Si está en carga inicial y aún no hay información de usuario
   if (loading && !localStorage.getItem('supabase.auth.token')) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
-        <p className="mt-4 text-gray-600">Verificando autenticación...</p>
+        <p className="mt-4 text-gray-600">Loading...</p>
       </div>
     );
   }
   
   return (
-    <Routes>
-      {/* Rutas públicas accesibles para todos */}
-      <Route path="/" element={<Index />} />
-      <Route path="/listings" element={<Listings />} />
-      <Route path="/listings/:id" element={<ListingDetail />} />
-      
-      {/* Rutas protegidas - requieren autenticación */}
-      <Route path="/broker/dashboard" element={
-        user ? <BrokerDashboard /> : <Navigate to="/login" state={{ from: location }} replace />
-      } />
-      <Route path="/listings/new" element={
-        user ? <AddListing /> : <Navigate to="/login" state={{ from: location }} replace />
-      } />
-      
-      {/* Rutas de autenticación - no accesibles si ya está autenticado */}
-      <Route path="/login" element={
-        user ? <Navigate to="/" replace /> : <Login />
-      } />
-      <Route path="/register" element={
-        user ? <Navigate to="/" replace /> : <Register />
-      } />
-      <Route path="/forgot-password" element={
-        user ? <Navigate to="/" replace /> : <ForgotPassword />
-      } />
-      
-      {/* Rutas de procesamiento de autenticación - siempre accesibles */}
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/auth/success" element={<AuthenticationSuccess />} />
-      <Route path="/auth/callback" element={<AuthCallback />} />
-
-      {/* Ruta de respaldo para URLs no encontradas */}
-      <Route path="*" element={<NotFound />} />
-    </Routes>
-  );
-};
-
-// Componente separado para mantener persistente el header
-const AppLayout = () => {
-  return (
     <>
-      <Header />
-      <HeaderSpacer />
-      <ProtectedRoutes />
+      {/* Only show header on non-admin routes */}
+      {!isAdminRoute && (
+        <>
+          <Header />
+          <HeaderSpacer />
+        </>
+      )}
+      
+      <Routes>
+        {/* Rutas públicas accesibles para todos */}
+        <Route path="/" element={<Index />} />
+        <Route path="/listings" element={<Listings />} />
+        <Route path="/listings/:id" element={<ListingDetail />} />
+        
+        {/* Admin Routes - Checks for ADMIN role */}
+        <Route path="/admin/dashboard" element={
+          <AdminRoute>
+            <AdminDashboard />
+          </AdminRoute>
+        } />
+        <Route path="/admin/listings" element={
+          <AdminRoute>
+            <AdminListings />
+          </AdminRoute>
+        } />
+        <Route path="/admin/listings/:id/edit" element={
+          <AdminRoute>
+            {/* Fix: Using the ListingEdit component */}
+            {ListingEdit ? <ListingEdit /> : <div>Loading editor...</div>}
+          </AdminRoute>
+        } />
+        
+        {/* Rutas protegidas - requieren autenticación */}
+        <Route path="/broker/dashboard" element={
+          user ? <BrokerDashboard /> : <Navigate to="/login" state={{ from: location }} replace />
+        } />
+        <Route path="/listings/new" element={
+          user ? <AddListing /> : <Navigate to="/login" state={{ from: location }} replace />
+        } />
+        <Route path="/listings/:id/edit" element={
+          user ? (ListingEdit ? <ListingEdit /> : <div>Loading editor...</div>) : <Navigate to="/login" state={{ from: location }} replace />
+        } />
+        
+        {/* Rutas de autenticación - no accesibles si ya está autenticado */}
+        <Route path="/login" element={
+          user ? (
+            // If user is admin, redirect to admin dashboard, otherwise to home
+            userRole === 'ADMIN' ? <Navigate to="/admin/dashboard" replace /> : <Navigate to="/" replace />
+          ) : <Login />
+        } />
+        <Route path="/register" element={
+          user ? <Navigate to="/" replace /> : <Register />
+        } />
+        <Route path="/forgot-password" element={
+          user ? <Navigate to="/" replace /> : <ForgotPassword />
+        } />
+        
+        {/* Rutas de procesamiento de autenticación - siempre accesibles */}
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/auth/success" element={<AuthenticationSuccess />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+
+        {/* Ruta de respaldo para URLs no encontradas */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
     </>
   );
 };
@@ -92,7 +177,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <AppLayout />
+          <AppRoutes />
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>

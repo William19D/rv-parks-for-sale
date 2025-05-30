@@ -1,3 +1,6 @@
+import { fetchApprovedListings, fetchFeaturedApprovedListings, Listing as ServiceListing } from "@/services/listingService";
+
+// Update the existing interface to include the status field
 export interface Listing {
   id: string;
   title: string;
@@ -27,8 +30,10 @@ export interface Listing {
   pdfUrl?: string;
   createdAt: string;
   featured: boolean;
+  status?: string; // Add status field to match the service
 }
 
+// Keep the mock listings for fallback and development purposes
 export const mockListings: Listing[] = [
   {
     id: "1",
@@ -61,7 +66,8 @@ export const mockListings: Listing[] = [
       id: "b1"
     },
     createdAt: "2023-01-15T08:00:00Z",
-    featured: true
+    featured: true,
+    status: "approved" // Add status to all mock listings
   },
   {
     id: "2",
@@ -92,7 +98,8 @@ export const mockListings: Listing[] = [
       id: "b2"
     },
     createdAt: "2023-02-10T10:30:00Z",
-    featured: true
+    featured: true,
+    status: "approved"
   },
   {
     id: "3",
@@ -125,7 +132,8 @@ export const mockListings: Listing[] = [
     },
     pdfUrl: "#",
     createdAt: "2023-03-05T14:15:00Z",
-    featured: false
+    featured: false,
+    status: "approved"
   },
   {
     id: "4",
@@ -156,7 +164,8 @@ export const mockListings: Listing[] = [
       id: "b4"
     },
     createdAt: "2023-04-12T09:45:00Z",
-    featured: false
+    featured: false,
+    status: "approved"
   },
   {
     id: "5",
@@ -187,7 +196,8 @@ export const mockListings: Listing[] = [
       id: "b5"
     },
     createdAt: "2023-05-20T11:20:00Z",
-    featured: false
+    featured: false,
+    status: "approved"
   }
 ];
 
@@ -218,3 +228,94 @@ export const states = [
   "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
   "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"
 ];
+
+/**
+ * Filter listings based on given filter options.
+ * This function still exists for backward compatibility but now attempts
+ * to use the Supabase service first.
+ */
+export const filterListings = async (listings: Listing[], options: FilterOptions): Promise<Listing[]> => {
+  try {
+    // Try to use the Supabase service first with the filter options
+    const filters = {
+      priceMin: options.priceMin,
+      priceMax: options.priceMax,
+      state: options.state,
+      sitesMin: options.sitesMin,
+      sitesMax: options.sitesMax,
+      capRateMin: options.capRateMin,
+      search: options.search
+    };
+    
+    // Fetch from Supabase
+    const serviceListings = await fetchApprovedListings(filters);
+    
+    // If we got results from the service, use those
+    if (serviceListings && serviceListings.length > 0) {
+      return serviceListings as Listing[];
+    }
+    
+    // Fall back to filtering mock data if the service failed or returned no results
+    console.warn('Falling back to mock listings - no results from service');
+  } catch (error) {
+    console.error('Error fetching from service, falling back to mock data:', error);
+  }
+  
+  // Legacy filter function using mock data
+  return listings.filter(listing => {
+    // Apply price filter
+    if (listing.price < options.priceMin || listing.price > options.priceMax) {
+      return false;
+    }
+    
+    // Apply state filter
+    if (options.state && options.state !== '' && listing.location.state !== options.state) {
+      return false;
+    }
+    
+    // Apply sites filter
+    if (listing.numSites < options.sitesMin || listing.numSites > options.sitesMax) {
+      return false;
+    }
+    
+    // Apply cap rate filter
+    if (listing.capRate < options.capRateMin) {
+      return false;
+    }
+    
+    // Apply search filter
+    if (options.search && options.search !== '') {
+      const searchLower = options.search.toLowerCase();
+      const titleMatch = listing.title.toLowerCase().includes(searchLower);
+      const descriptionMatch = listing.description.toLowerCase().includes(searchLower);
+      const locationMatch = 
+        listing.location.city.toLowerCase().includes(searchLower) || 
+        listing.location.state.toLowerCase().includes(searchLower);
+      
+      return titleMatch || descriptionMatch || locationMatch;
+    }
+    
+    return true;
+  }).filter(listing => listing.status === 'approved' || !listing.status);
+};
+
+/**
+ * Gets featured listings either from the service or mock data
+ */
+export const getFeaturedListings = async (): Promise<Listing[]> => {
+  try {
+    // Try to get featured listings from service
+    const featuredListings = await fetchFeaturedApprovedListings();
+    if (featuredListings && featuredListings.length > 0) {
+      return featuredListings as Listing[];
+    }
+    
+    // Fallback to mock data
+    console.warn('Falling back to mock featured listings');
+  } catch (error) {
+    console.error('Error fetching featured listings from service:', error);
+  }
+  
+  // Return featured mock listings
+  return mockListings.filter(listing => listing.featured && (listing.status === 'approved' || !listing.status));
+};
