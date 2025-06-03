@@ -47,25 +47,26 @@ export interface ListingFilters {
 }
 
 /**
- * Fetches all listings with 'approved' status
+ * Fetches only approved listings
  */
 export const fetchApprovedListings = async (filters?: ListingFilters): Promise<Listing[]> => {
   try {
-    // Start building the query
+    // Always include the approved filter in all queries
     let query = supabase
       .from('listings')
       .select(`
         *,
-        broker:broker_id (
+        listing_images(storage_path, is_primary),
+        user:user_id (
           id, 
-          name, 
-          avatar, 
+          email,
+          full_name,
+          avatar_url, 
           phone, 
-          email, 
-          company
+          company_name
         )
       `)
-      .eq('status', 'approved'); // This is the key filter - only approved listings
+      .eq('status', 'approved'); // Only fetch approved listings
 
     // Apply additional filters if provided
     if (filters) {
@@ -80,51 +81,99 @@ export const fetchApprovedListings = async (filters?: ListingFilters): Promise<L
       
       // State filter
       if (filters.state && filters.state !== '') {
-        query = query.eq('location->state', filters.state);
+        query = query.eq('state', filters.state);
       }
       
       // Site count filters
       if (filters.sitesMin !== undefined && filters.sitesMin > 0) {
-        query = query.gte('numSites', filters.sitesMin);
+        query = query.gte('num_sites', filters.sitesMin);
       }
       
       if (filters.sitesMax !== undefined && filters.sitesMax < 1000) {
-        query = query.lte('numSites', filters.sitesMax);
+        query = query.lte('num_sites', filters.sitesMax);
       }
       
       // Cap rate filter
       if (filters.capRateMin !== undefined && filters.capRateMin > 0) {
-        query = query.gte('capRate', filters.capRateMin);
+        query = query.gte('cap_rate', filters.capRateMin);
       }
       
       // Occupancy rate filter
       if (filters.occupancyRateMin !== undefined && filters.occupancyRateMin > 0) {
-        query = query.gte('occupancyRate', filters.occupancyRateMin);
+        query = query.gte('occupancy_rate', filters.occupancyRateMin);
       }
       
       // Search term
       if (filters.search && filters.search.trim() !== '') {
         const searchTerm = `%${filters.search.trim()}%`;
-        query = query.or(`title.ilike.${searchTerm},description.ilike.${searchTerm},location->city.ilike.${searchTerm},location->state.ilike.${searchTerm}`);
+        query = query.or(`title.ilike.${searchTerm},description.ilike.${searchTerm},city.ilike.${searchTerm},state.ilike.${searchTerm}`);
       }
     }
 
     const { data, error } = await query;
     
     if (error) {
-      console.error('Error fetching listings:', error);
-      throw error;
+      // Don't log error details that might contain listing information
+      return [];
     }
     
-    return data || [];
+    // Transform data to match the Listing interface
+    if (data) {
+      return data.map(listing => {
+        // Process images to get URLs
+        const images = listing.listing_images?.map(img => {
+          return supabase.storage.from('listing-images').getPublicUrl(img.storage_path).data.publicUrl;
+        }) || [];
+        
+        // Sort images with primary first
+        const primaryImageIndex = listing.listing_images?.findIndex(img => img.is_primary);
+        if (primaryImageIndex > 0 && images.length > 0) {
+          const primaryImage = images[primaryImageIndex];
+          images.splice(primaryImageIndex, 1);
+          images.unshift(primaryImage);
+        }
+        
+        return {
+          id: listing.id,
+          title: listing.title,
+          description: listing.description,
+          price: listing.price,
+          location: {
+            address: listing.address || '',
+            city: listing.city,
+            state: listing.state,
+            lat: listing.latitude || 0,
+            lng: listing.longitude || 0
+          },
+          numSites: listing.num_sites,
+          occupancyRate: listing.occupancy_rate,
+          annualRevenue: listing.annual_revenue,
+          capRate: listing.cap_rate,
+          images: images,
+          broker: {
+            id: listing.user?.id || '',
+            name: listing.user?.full_name || 'Unknown',
+            email: listing.user?.email || '',
+            phone: listing.user?.phone || '',
+            company: listing.user?.company_name || '',
+            avatar: listing.user?.avatar_url || '/default-avatar.png'
+          },
+          createdAt: listing.created_at,
+          featured: !!listing.featured,
+          status: listing.status
+        };
+      });
+    }
+    
+    return [];
   } catch (error) {
-    console.error('Failed to fetch listings:', error);
+    // Don't log error details
     return [];
   }
 };
 
 /**
- * Fetches featured listings with 'approved' status
+ * Fetches featured listings that are approved
  */
 export const fetchFeaturedApprovedListings = async (): Promise<Listing[]> => {
   try {
@@ -132,28 +181,77 @@ export const fetchFeaturedApprovedListings = async (): Promise<Listing[]> => {
       .from('listings')
       .select(`
         *,
-        broker:broker_id (
+        listing_images(storage_path, is_primary),
+        user:user_id (
           id, 
-          name, 
-          avatar, 
+          email,
+          full_name, 
+          avatar_url, 
           phone, 
-          email, 
-          company
+          company_name
         )
       `)
-      .eq('status', 'approved')
-      .eq('featured', true)
-      .order('createdAt', { ascending: false })
-      .limit(3); // Limit to 3 featured listings
+      .eq('status', 'approved')  // Only approved listings
+      .eq('featured', true)      // Only featured listings
+      .order('created_at', { ascending: false })
+      .limit(3); // Limit to top 3 featured listings
     
     if (error) {
-      console.error('Error fetching featured listings:', error);
-      throw error;
+      // Don't log error details
+      return [];
     }
     
-    return data || [];
+    // Transform data to match the Listing interface (same as in fetchApprovedListings)
+    if (data) {
+      return data.map(listing => {
+        // Process images to get URLs
+        const images = listing.listing_images?.map(img => {
+          return supabase.storage.from('listing-images').getPublicUrl(img.storage_path).data.publicUrl;
+        }) || [];
+        
+        // Sort images with primary first
+        const primaryImageIndex = listing.listing_images?.findIndex(img => img.is_primary);
+        if (primaryImageIndex > 0 && images.length > 0) {
+          const primaryImage = images[primaryImageIndex];
+          images.splice(primaryImageIndex, 1);
+          images.unshift(primaryImage);
+        }
+        
+        return {
+          id: listing.id,
+          title: listing.title,
+          description: listing.description,
+          price: listing.price,
+          location: {
+            address: listing.address || '',
+            city: listing.city,
+            state: listing.state,
+            lat: listing.latitude || 0,
+            lng: listing.longitude || 0
+          },
+          numSites: listing.num_sites,
+          occupancyRate: listing.occupancy_rate,
+          annualRevenue: listing.annual_revenue,
+          capRate: listing.cap_rate,
+          images: images,
+          broker: {
+            id: listing.user?.id || '',
+            name: listing.user?.full_name || 'Unknown',
+            email: listing.user?.email || '',
+            phone: listing.user?.phone || '',
+            company: listing.user?.company_name || '',
+            avatar: listing.user?.avatar_url || '/default-avatar.png'
+          },
+          createdAt: listing.created_at,
+          featured: true,
+          status: listing.status
+        };
+      });
+    }
+    
+    return [];
   } catch (error) {
-    console.error('Failed to fetch featured listings:', error);
+    // Don't log error details
     return [];
   }
 };
@@ -167,30 +265,72 @@ export const fetchApprovedListingById = async (id: string): Promise<Listing | nu
       .from('listings')
       .select(`
         *,
-        broker:broker_id (
+        listing_images(storage_path, is_primary),
+        user:user_id (
           id, 
-          name, 
-          avatar, 
+          email,
+          full_name,
+          avatar_url, 
           phone, 
-          email, 
-          company
+          company_name
         )
       `)
       .eq('id', id)
-      .eq('status', 'approved')
+      .eq('status', 'approved')  // Only return if approved
       .single();
     
     if (error) {
-      if (error.code === 'PGRST116') { // PostgreSQL error for no rows returned
-        return null; // No listing found with that ID or it's not approved
-      }
-      console.error('Error fetching listing by ID:', error);
-      throw error;
+      return null;
     }
     
-    return data;
+    if (data) {
+      // Process images to get URLs
+      const images = data.listing_images?.map(img => {
+        return supabase.storage.from('listing-images').getPublicUrl(img.storage_path).data.publicUrl;
+      }) || [];
+      
+      // Sort images with primary first
+      const primaryImageIndex = data.listing_images?.findIndex(img => img.is_primary);
+      if (primaryImageIndex > 0 && images.length > 0) {
+        const primaryImage = images[primaryImageIndex];
+        images.splice(primaryImageIndex, 1);
+        images.unshift(primaryImage);
+      }
+      
+      return {
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        price: data.price,
+        location: {
+          address: data.address || '',
+          city: data.city,
+          state: data.state,
+          lat: data.latitude || 0,
+          lng: data.longitude || 0
+        },
+        numSites: data.num_sites,
+        occupancyRate: data.occupancy_rate,
+        annualRevenue: data.annual_revenue,
+        capRate: data.cap_rate,
+        images: images,
+        broker: {
+          id: data.user?.id || '',
+          name: data.user?.full_name || 'Unknown',
+          email: data.user?.email || '',
+          phone: data.user?.phone || '',
+          company: data.user?.company_name || '',
+          avatar: data.user?.avatar_url || '/default-avatar.png'
+        },
+        createdAt: data.created_at,
+        featured: !!data.featured,
+        status: data.status
+      };
+    }
+    
+    return null;
   } catch (error) {
-    console.error(`Failed to fetch listing with ID ${id}:`, error);
+    // Don't log error details
     return null;
   }
 };
@@ -206,13 +346,11 @@ export const countApprovedListings = async (): Promise<number> => {
       .eq('status', 'approved');
     
     if (error) {
-      console.error('Error counting listings:', error);
-      throw error;
+      return 0;
     }
     
     return count || 0;
   } catch (error) {
-    console.error('Failed to count listings:', error);
     return 0;
   }
 };

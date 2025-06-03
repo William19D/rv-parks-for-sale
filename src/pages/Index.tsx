@@ -3,16 +3,39 @@ import { Button } from "@/components/ui/button";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { ListingCard } from "@/components/listings/ListingCard";
-import { mockListings } from "@/data/mockListings";
+import { getFeaturedListings, Listing } from "@/data/mockListings";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowRight, ChevronDown, Calendar, BarChart3, CreditCard, Users, CheckCircle2 } from "lucide-react";
+import { 
+  ArrowRight, ChevronDown, Calendar, BarChart3, CreditCard, 
+  Users, CheckCircle2, Loader2, MapPin 
+} from "lucide-react";
 
 const Index = () => {
-  // Get featured listings
-  const featuredListings = mockListings.filter(listing => listing.featured);
+  // Estados para los listings y UI
+  const [featuredListings, setFeaturedListings] = useState<Listing[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [scrolled, setScrolled] = useState(false);
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+  
+  // Cargar listings aprobados cuando el componente se monta
+  useEffect(() => {
+    const loadApprovedListings = async () => {
+      setIsLoading(true);
+      try {
+        // Esta función ya está filtrando por status 'approved' en la API
+        const approvedFeaturedListings = await getFeaturedListings();
+        setFeaturedListings(approvedFeaturedListings);
+      } catch (error) {
+        // No mostramos detalles del error que podrían contener información sensible
+        console.error("Error loading listings");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadApprovedListings();
+  }, []);
   
   useEffect(() => {
     const handleScroll = () => {
@@ -130,7 +153,7 @@ const Index = () => {
         </motion.div>
       </section>
       
-      {/* Featured Listings Section */}
+      {/* Featured Listings Section - Solo listings aprobados */}
       <section className="py-16 bg-gray-50">
         <div className="container mx-auto px-4">
           <div className="flex justify-between items-center mb-8">
@@ -146,19 +169,43 @@ const Index = () => {
             </Button>
           </div>
           
-          <motion.div 
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-            variants={containerVariants}
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-100px" }}
-          >
-            {featuredListings.map((listing, index) => (
-              <motion.div key={listing.id} variants={itemVariants}>
-                <ListingCard listing={listing} />
-              </motion.div>
-            ))}
-          </motion.div>
+          {isLoading ? (
+            <div className="flex justify-center py-20">
+              <div className="flex flex-col items-center">
+                <Loader2 className="h-12 w-12 text-[#f74f4f] animate-spin mb-4" />
+                <p className="text-gray-500 text-lg">Loading featured properties...</p>
+              </div>
+            </div>
+          ) : featuredListings.length > 0 ? (
+            <motion.div 
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              variants={containerVariants}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, margin: "-100px" }}
+            >
+              {featuredListings.map((listing) => (
+                <motion.div key={listing.id} variants={itemVariants}>
+                  <ListingCard listing={listing} />
+                </motion.div>
+              ))}
+            </motion.div>
+          ) : (
+            <div className="text-center py-20 bg-gray-100 rounded-lg">
+              <div className="flex flex-col items-center">
+                <div className="bg-gray-200 rounded-full p-4 mb-4">
+                  <MapPin className="h-10 w-10 text-[#f74f4f]" />
+                </div>
+                <h3 className="text-xl font-semibold mb-2">No Featured Properties Available</h3>
+                <p className="text-gray-500 max-w-lg mx-auto">
+                  We don't have any featured properties at the moment. Please check back soon or browse our other listings.
+                </p>
+                <Button asChild className="mt-6 bg-[#f74f4f] hover:bg-[#e43c3c]">
+                  <Link to="/listings">Browse All Listings</Link>
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -645,39 +692,39 @@ const Index = () => {
       
       {/* Newsletter Section - New addition */}
       {/* Newsletter Section - Updated with orange theme */}
-<section className="py-16 bg-gradient-to-r from-[#f74f4f] to-[#ff7a45] relative overflow-hidden">
-  {/* Moving background elements - matches CTA section style */}
-  <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-white/5 blur-xl"></div>
-  <div className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full bg-white/5 blur-xl"></div>
-  
-  <div className="container mx-auto px-4">
-    <motion.div
-      className="max-w-3xl mx-auto text-center text-white relative z-10"
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.6 }}
-    >
-      <h2 className="text-3xl font-bold mb-4">Stay Updated</h2>
-      <p className="text-xl mb-8 text-white/80">
-        Get the latest RV park listings and industry insights delivered to your inbox.
-      </p>
-      
-      <div className="flex flex-col sm:flex-row gap-3 max-w-lg mx-auto">
-        <input
-          type="email"
-          placeholder="Enter your email"
-          className="flex-1 px-4 py-3 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-white/50"
-        />
-        <Button 
-          className="bg-white text-[#f74f4f] hover:bg-gray-100 hover:shadow-lg transition-all"
-        >
-          Subscribe
-        </Button>
-      </div>
-    </motion.div>
-  </div>
-</section>
+      <section className="py-16 bg-gradient-to-r from-[#f74f4f] to-[#ff7a45] relative overflow-hidden">
+        {/* Moving background elements - matches CTA section style */}
+        <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-white/5 blur-xl"></div>
+        <div className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full bg-white/5 blur-xl"></div>
+        
+        <div className="container mx-auto px-4">
+          <motion.div
+            className="max-w-3xl mx-auto text-center text-white relative z-10"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+          >
+            <h2 className="text-3xl font-bold mb-4">Stay Updated</h2>
+            <p className="text-xl mb-8 text-white/80">
+              Get the latest RV park listings and industry insights delivered to your inbox.
+            </p>
+            
+            <div className="flex flex-col sm:flex-row gap-3 max-w-lg mx-auto">
+              <input
+                type="email"
+                placeholder="Enter your email"
+                className="flex-1 px-4 py-3 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-white/50"
+              />
+              <Button 
+                className="bg-white text-[#f74f4f] hover:bg-gray-100 hover:shadow-lg transition-all"
+              >
+                Subscribe
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      </section>
       
       <Footer />
     </div>

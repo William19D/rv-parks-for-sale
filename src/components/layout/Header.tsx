@@ -20,6 +20,8 @@ interface NavItem {
   path: string;
   dropdown: null | string;
   icon?: LucideIcon;
+  exact?: boolean;
+  exclude?: string[]; // Rutas a excluir de la correspondencia
 }
 
 // Component for spacing that matches the header height
@@ -54,11 +56,30 @@ export const HeaderSpacer = memo(() => {
   return <div style={{ height: `${headerHeight}px` }}></div>;
 });
 
+// Función para determinar si una ruta está activa
+const isRouteActive = (item: NavItem, pathname: string): boolean => {
+  // Si es una ruta exacta, solo debe coincidir perfectamente
+  if (item.exact) {
+    return pathname === item.path;
+  }
+  
+  // Verificar si el path actual está en las rutas excluidas
+  if (item.exclude && item.exclude.some(route => pathname === route || pathname.startsWith(route))) {
+    return false;
+  }
+  
+  // Para rutas no exactas, verificar si coincide exactamente o si es una subruta
+  return pathname === item.path || (item.path !== '/' && pathname.startsWith(`${item.path}/`));
+};
+
 // Componente memoizado para cada elemento de navegación
 const NavItemComponent = memo(({ item, closeDropdowns }: { 
   item: NavItem, 
   closeDropdowns: () => void 
 }) => {
+  const location = useLocation();
+  const active = isRouteActive(item, location.pathname);
+
   const handleClick = () => {
     closeDropdowns();
     window.scrollTo({
@@ -71,15 +92,18 @@ const NavItemComponent = memo(({ item, closeDropdowns }: {
     <div className="relative group">
       <NavLink
         to={item.path}
-        className={({ isActive }) => cn(
+        className={cn(
           "px-2 py-2 text-sm font-medium transition-colors flex items-center",
-          isActive ? "text-[#f74f4f]" : "text-gray-700 hover:text-[#f74f4f]"
+          active ? "text-[#f74f4f]" : "text-gray-700 hover:text-[#f74f4f]"
         )}
         onClick={handleClick}
       >
         {item.icon && <item.icon className="h-4 w-4 mr-1 text-current" />}
         {item.name}
-        <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-[#f74f4f] group-hover:w-full transition-all duration-300"></span>
+        <span className={cn(
+          "absolute bottom-0 left-0 h-0.5 bg-[#f74f4f] transition-all duration-300",
+          active ? "w-full" : "w-0 group-hover:w-full"
+        )}></span>
       </NavLink>
     </div>
   );
@@ -90,6 +114,9 @@ const MobileNavItem = memo(({ item, setMenuOpen }: {
   item: NavItem, 
   setMenuOpen: (isOpen: boolean) => void 
 }) => {
+  const location = useLocation();
+  const active = isRouteActive(item, location.pathname);
+
   const handleClick = () => {
     setMenuOpen(false);
     window.scrollTo({
@@ -102,16 +129,16 @@ const MobileNavItem = memo(({ item, setMenuOpen }: {
     <div>
       <NavLink
         to={item.path}
-        className={({ isActive }) => cn(
+        className={cn(
           "flex items-center py-2 px-3 rounded-md group",
-          isActive ? "bg-gray-100 text-[#f74f4f]" : "hover:bg-gray-100"
+          active ? "bg-gray-100 text-[#f74f4f]" : "hover:bg-gray-100"
         )}
         onClick={handleClick}
       >
         {item.icon && <item.icon className="h-4 w-4 mr-2 text-current" />}
         <span className={cn(
           "transition-colors",
-          "group-hover:text-[#f74f4f]"
+          active ? "text-[#f74f4f]" : "group-hover:text-[#f74f4f]"
         )}>
           {item.name}
         </span>
@@ -302,11 +329,14 @@ export const Header = memo(() => {
         name: "Home",
         path: "/",
         dropdown: null,
+        exact: true // La ruta Home debe coincidir exactamente
       },
       {
         name: "RV Parks For Sale",
         path: "/listings",
         dropdown: null,
+        exclude: ["/listings/new"], // Excluir la ruta de "Add Listing"
+        exact: false
       },
     ];
     
@@ -317,12 +347,14 @@ export const Header = memo(() => {
           name: "Add Listing",
           path: "/listings/new",
           dropdown: null,
-          icon: PlusCircle
+          icon: PlusCircle,
+          exact: true // Solo activo en la ruta exacta
         },
         {
           name: "Broker Dashboard",
           path: "/broker/dashboard",
           dropdown: null,
+          exact: false // Activo en todas las sub-rutas del dashboard
         }
       );
     }
