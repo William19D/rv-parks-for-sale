@@ -23,9 +23,23 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent } from "@/components/ui/card";
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 'react-leaflet';
 import { Icon, LatLng } from 'leaflet';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// Enhanced validation schema with NUMERIC CONSTRAINTS added
+// Fix Leaflet's default icon path issues in production
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+// Override default Leaflet icon paths
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow
+});
+
+// Enhanced validation schema with NUMERIC CONSTRAINTS and address field added
 const listingSchema = z.object({
   title: z
     .string()
@@ -60,6 +74,12 @@ const listingSchema = z.object({
   state: z
     .string()
     .min(2, { message: "State is required" }),
+  
+  // New field for address
+  address: z
+    .string()
+    .min(3, { message: "Address is required" })
+    .max(200, { message: "Address must be less than 200 characters" }),
   
   numSites: z
     .string()
@@ -229,11 +249,70 @@ Object.entries(stateAbbreviations).forEach(([abbr, name]) => {
   stateToAbbreviation[name.toLowerCase()] = abbr;
 });
 
+// Address search component for finding location by full address
+interface AddressSearchProps {
+  address: string;
+  city: string;
+  state: string;
+  onLocationFound: (lat: number, lng: number) => void;
+  searchTriggered: boolean;
+}
+
+const AddressSearch: React.FC<AddressSearchProps> = ({ 
+  address, city, state, onLocationFound, searchTriggered 
+}) => {
+  const map = useMap();
+  const searchComplete = useRef(false);
+  const lastSearch = useRef("");
+  
+  useEffect(() => {
+    // Only search if address is provided and search was triggered
+    const fullAddress = `${address}, ${city}, ${state}, USA`.trim();
+    
+    if (fullAddress && searchTriggered && !searchComplete.current && fullAddress !== lastSearch.current) {
+      const searchLocation = async () => {
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullAddress)}`
+          );
+          const data = await response.json();
+          
+          if (data && data.length > 0) {
+            const { lat, lon } = data[0];
+            const latitude = parseFloat(lat);
+            const longitude = parseFloat(lon);
+            
+            // Set the view and update marker
+            map.setView([latitude, longitude], 16);
+            onLocationFound(latitude, longitude);
+            searchComplete.current = true;
+            lastSearch.current = fullAddress;
+          }
+        } catch (error) {
+          console.error("Error finding address:", error);
+        }
+      };
+      
+      searchLocation();
+    }
+  }, [address, city, state, searchTriggered, map, onLocationFound]);
+  
+  // Reset search complete when address changes substantially
+  useEffect(() => {
+    const fullAddress = `${address}, ${city}, ${state}`.trim();
+    if (fullAddress !== lastSearch.current) {
+      searchComplete.current = false;
+    }
+  }, [address, city, state]);
+  
+  return null;
+};
+
 // Draggable marker component with enhanced popup and reverse geocoding
 interface DraggableMarkerProps {
   position: [number, number];
   onPositionChange: (lat: number, lng: number) => void;
-  onLocationInfoChange?: (city: string, state: string) => void;
+  onLocationInfoChange?: (city: string, state: string, address?: string) => void;
   propertyType?: string;
 }
 
@@ -252,19 +331,17 @@ const DraggableMarker: React.FC<DraggableMarkerProps> = ({
       setMarkerPosition([position.lat, position.lng]);
       onPositionChange(position.lat, position.lng);
       
-      // Perform reverse geocoding to get city and state
+      // Perform reverse geocoding to get city, state, and address
       if (onLocationInfoChange) {
-        reverseGeocode(position.lat, position.lng).then(({ city, state }) => {
-          if (city && state) {
-            onLocationInfoChange(city, state);
-          }
+        reverseGeocode(position.lat, position.lng).then(({ city, state, address }) => {
+          onLocationInfoChange(city, state, address);
         });
       }
     }
   };
 
   // Enhanced reverse geocode function to convert coordinates to address
-  const reverseGeocode = async (lat: number, lng: number): Promise<{ city: string, state: string }> => {
+  const reverseGeocode = async (lat: number, lng: number): Promise<{ city: string, state: string, address: string }> => {
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
@@ -273,9 +350,21 @@ const DraggableMarker: React.FC<DraggableMarkerProps> = ({
       
       let city = '';
       let state = '';
+      let address = '';
       
       if (data && data.address) {
         console.log("Geocode data:", data.address);
+        
+        // Get street address
+        const road = data.address.road || data.address.street || '';
+        const houseNumber = data.address.house_number || '';
+        const suburb = data.address.suburb || data.address.neighborhood || '';
+        
+        // Construct address
+        if (road) {
+          address = houseNumber ? `${houseNumber} ${road}` : road;
+          if (suburb) address += `, ${suburb}`;
+        }
         
         // Try to get city (may be labeled differently based on region)
         city = data.address.city || 
@@ -340,11 +429,11 @@ const DraggableMarker: React.FC<DraggableMarkerProps> = ({
         }
       }
       
-      console.log("Matched city and state:", { city, state });
-      return { city, state };
+      console.log("Matched location info:", { city, state, address });
+      return { city, state, address };
     } catch (error) {
       console.error("Error in reverse geocoding:", error);
-      return { city: '', state: '' };
+      return { city: '', state: '', address: '' };
     }
   };
 
@@ -363,7 +452,7 @@ const DraggableMarker: React.FC<DraggableMarkerProps> = ({
         <div className="text-center">
           <strong>Property Location</strong>
           <p className="mt-1">Drag this marker to set the exact location of your {propertyType}.</p>
-          <p className="text-sm text-gray-600 mt-1">City and state will update automatically.</p>
+          <p className="text-sm text-gray-600 mt-1">Address, city and state will update automatically.</p>
         </div>
       </Popup>
     </Marker>
@@ -451,6 +540,7 @@ const AddListing = () => {
   const [markerPosition, setMarkerPosition] = useState<[number, number]>([39.8283, -98.5795]); // USA center
   const [locationFound, setLocationFound] = useState(false);
   const [searchTriggered, setSearchTriggered] = useState(false);
+  const [addressSearchTriggered, setAddressSearchTriggered] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   
   // Fix for z-index issues with dropdowns
@@ -492,6 +582,7 @@ const AddListing = () => {
       description: "",
       city: "",
       state: "",
+      address: "",
       numSites: "",
       occupancyRate: "",
       annualRevenue: "",
@@ -508,6 +599,7 @@ const AddListing = () => {
   const { watch } = form;
   const city = watch('city');
   const state = watch('state');
+  const address = watch('address');
   const propertyType = watch('propertyType');
 
   // Number input formatting helper
@@ -558,7 +650,7 @@ const AddListing = () => {
   };
   
   // Handle location info change from marker drag
-  const handleLocationInfoChange = (city: string, state: string) => {
+  const handleLocationInfoChange = (city: string, state: string, address?: string) => {
     if (city) {
       form.setValue('city', city);
     }
@@ -569,9 +661,13 @@ const AddListing = () => {
         form.setValue('state', state);
       }
     }
+    
+    if (address) {
+      form.setValue('address', address);
+    }
   };
 
-  // Manual location search function
+  // Manual location search function by city/state
   const handleSearchLocation = async () => {
     const currentCity = form.getValues('city');
     const currentState = form.getValues('state');
@@ -617,6 +713,62 @@ const AddListing = () => {
         variant: "destructive",
         title: "Error",
         description: "An error occurred while searching for the location. Please try again."
+      });
+    }
+  };
+
+  // NEW: Manual location search function by full address
+  const handleAddressSearch = async () => {
+    const currentAddress = form.getValues('address');
+    const currentCity = form.getValues('city');
+    const currentState = form.getValues('state');
+    
+    if (!currentAddress) {
+      toast({
+        variant: "destructive",
+        title: "Address missing",
+        description: "Please enter a street address to search"
+      });
+      return;
+    }
+    
+    try {
+      // Create a search query with whatever information is available
+      let query = currentAddress;
+      if (currentCity) query += `, ${currentCity}`;
+      if (currentState) query += `, ${currentState}`;
+      query += ', USA';
+      
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`
+      );
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        const { lat, lon } = data[0];
+        const latitude = parseFloat(lat);
+        const longitude = parseFloat(lon);
+        
+        handleLocationFound(latitude, longitude);
+        setAddressSearchTriggered(prev => !prev); // Toggle to trigger address search
+        
+        toast({
+          title: "Location found",
+          description: `Found coordinates for the provided address`
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Address not found",
+          description: "Could not find this address. Please check the address and try again."
+        });
+      }
+    } catch (error) {
+      console.error("Error searching address:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "An error occurred while searching for the address. Please try again."
       });
     }
   };
@@ -892,6 +1044,7 @@ const AddListing = () => {
         description: values.description.trim(),
         city: values.city.trim(),
         state: values.state,
+        address: values.address.trim(), // Added address field
         latitude: values.latitude,
         longitude: values.longitude,
         num_sites: parseInt(values.numSites),
@@ -1049,6 +1202,41 @@ const AddListing = () => {
                     </FormItem>
                   )}
                 />
+
+                {/* NEW: Address field */}
+                <FormField
+                  control={form.control}
+                  name="address"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Street Address</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input 
+                            placeholder="123 Main Street" 
+                            className="pl-9" 
+                            {...field}
+                            maxLength={200}
+                          />
+                          <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        </div>
+                      </FormControl>
+                      <FormDescription className="flex justify-between">
+                        <span>Enter the street address of your property</span>
+                        <Button 
+                          type="button" 
+                          variant="ghost" 
+                          size="sm"
+                          className="px-2 py-0 h-auto text-sm text-blue-600 hover:text-blue-800"
+                          onClick={handleAddressSearch}
+                        >
+                          Find by Address
+                        </Button>
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <FormField
@@ -1114,7 +1302,7 @@ const AddListing = () => {
                       size="sm"
                       onClick={handleSearchLocation}
                     >
-                      Find Location
+                      Find by City/State
                     </Button>
                   </div>
                   
@@ -1144,6 +1332,13 @@ const AddListing = () => {
                             onLocationFound={handleLocationFound}
                             searchTriggered={searchTriggered}
                           />
+                          <AddressSearch 
+                            address={address}
+                            city={city}
+                            state={state}
+                            onLocationFound={handleLocationFound}
+                            searchTriggered={addressSearchTriggered}
+                          />
                         </MapContainer>
                       </div>
                     </CardContent>
@@ -1160,7 +1355,8 @@ const AddListing = () => {
                     )}
                   </div>
                   <FormDescription>
-                    After entering your city and state, click "Find Location". You can also drag the marker to adjust the location - city and state will update automatically.
+                    Enter your address and click "Find by Address", or use city/state and click "Find by City/State". 
+                    You can also drag the marker to adjust the location - the address, city and state will update automatically.
                   </FormDescription>
                 </div>
               </div>
@@ -1478,7 +1674,7 @@ const AddListing = () => {
                     <div className="flex items-center">
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       {uploadStatus || "Submitting..."}
-                    </div>
+                                        </div>
                   ) : "Submit Listing"}
                 </Button>
               </div>
