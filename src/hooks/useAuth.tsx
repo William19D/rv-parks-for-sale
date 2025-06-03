@@ -34,7 +34,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userRole, setUserRole] = useState<UserRole>(null);
   const { toast } = useToast();
 
+<<<<<<< HEAD
   // FUNCIÓN CORREGIDA para obtener el rol del usuario
+=======
+  // Function to fetch user role from role_id with a timeout
+>>>>>>> 5513dfe725908e1a265e54d7d88c2a05dbde748b
   const fetchUserRole = async (userId: string): Promise<UserRole> => {
     if (!userId) {
       console.error('[Auth] No se puede obtener rol sin userId');
@@ -42,6 +46,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     
     try {
+<<<<<<< HEAD
       console.log('[Auth] Obteniendo rol para usuario:', userId);
       
       // SOLUCIÓN 1: Intentar obtener el rol con una consulta SQL directa
@@ -72,11 +77,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log('[Auth] Intentando obtener rol vía user_role_assignments...');
       
       // Hacer una consulta más simple y directa
+=======
+      console.log('Fetching role for user:', userId);
+      
+      // Get the user's role assignments
+>>>>>>> 5513dfe725908e1a265e54d7d88c2a05dbde748b
       const { data: roleAssignments, error: roleError } = await supabase
         .from('user_role_assignments')
         .select('*')  // Seleccionar todos los campos para diagnóstico
         .eq('user_id', userId);
       
+<<<<<<< HEAD
       console.log('[Auth] Resultado de user_role_assignments:', 
         roleAssignments ? JSON.stringify(roleAssignments) : 'null',
         roleError ? `Error: ${JSON.stringify(roleError)}` : 'Sin error'
@@ -135,27 +146,58 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       
       return 'USER'; // Valor predeterminado seguro
+=======
+      console.log('Role assignments for user:', userId, roleAssignments);
+      
+      if (roleError) {
+        console.error('Error fetching role assignments:', roleError);
+        return 'USER';
+      }
+      
+      if (!roleAssignments || roleAssignments.length === 0) {
+        console.log('No role assignments found');
+        return 'USER';
+      }
+      
+      // Check if user has admin role (role_id = 2)
+      if (roleAssignments.some(ra => ra.role_id === 2)) {
+        console.log('Found admin role (ID 2)');
+        return 'ADMIN';
+      }
+      
+      // Check if user has broker role (role_id = 3, assuming broker is role 3)
+      if (roleAssignments.some(ra => ra.role_id === 3)) {
+        console.log('Found broker role (ID 3)');
+        return 'BROKER';
+      }
+      
+      // Default to USER
+      console.log('No special role found, defaulting to USER');
+      return 'USER';
+    } catch (error) {
+      console.error('Error in fetchUserRole:', error);
+      return 'USER';
+>>>>>>> 5513dfe725908e1a265e54d7d88c2a05dbde748b
     }
   };
 
-  // Initialize auth state
   useEffect(() => {
-    console.log('[Auth] Initializing auth provider...');
     let isMounted = true;
     
     const setData = async () => {
       try {
-        console.log('[Auth] Checking for existing session...');
+        // First quickly check if there's a session
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('[Auth] Error getting session:', error);
-          if (isMounted) setLoading(false);
+          if (isMounted) {
+            setLoading(false);
+          }
           return;
         }
         
+        // If no session, we can immediately set loading to false
         if (!session) {
-          console.log('[Auth] No session found');
           if (isMounted) {
             setSession(null);
             setUser(null);
@@ -165,6 +207,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
         
+<<<<<<< HEAD
         console.log('[Auth] Session found for user:', session.user.id, 'Email:', session.user.email);
         
         if (isMounted) {
@@ -181,23 +224,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             console.log('[Auth] Rol obtenido:', role);
             setUserRole(role);
           }
+=======
+        // We have a session, set the session and user
+        if (isMounted) {
+          setSession(session);
+          setUser(session.user || null);
+        }
+        
+        // Fetch role if we have a user
+        if (session?.user) {
+          const role = await fetchUserRole(session.user.id);
+>>>>>>> 5513dfe725908e1a265e54d7d88c2a05dbde748b
           
+          if (isMounted) {
+            setUserRole(role);
+          }
+        }
+        
+        // Set loading to false after everything is done
+        if (isMounted) {
           setLoading(false);
         }
       } catch (e) {
-        console.error('[Auth] Error in setData:', e);
-        if (isMounted) setLoading(false);
-      }
-    };
-    
-    setData();
-    
-    // Auth state change listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('[Auth] Auth state changed. Event:', event);
-        
+        console.error('Unexpected error in setData:', e);
         if (isMounted) {
+<<<<<<< HEAD
           if (!session) {
             // User logged out
             console.log('[Auth] No session in auth change event');
@@ -224,42 +275,77 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setUserRole(role);
           }
           
+=======
+>>>>>>> 5513dfe725908e1a265e54d7d88c2a05dbde748b
           setLoading(false);
         }
       }
-    );
+    };
     
     // Safety timeout to prevent infinite loading
     const safetyTimeout = setTimeout(() => {
       if (isMounted && loading) {
-        console.warn('[Auth] Safety timeout triggered. Force setting loading to false.');
         setLoading(false);
       }
-    }, 5000);
+    }, 3000);
+    
+    setData();
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (isMounted) {
+          setSession(session);
+          setUser(session?.user || null);
+        }
+        
+        // If no session, no need to check roles
+        if (!session) {
+          if (isMounted) {
+            setUserRole(null);
+            setLoading(false);
+          }
+          return;
+        }
+        
+        // Only check roles for authenticated users
+        if (session?.user) {
+          const role = await fetchUserRole(session.user.id);
+          
+          if (isMounted) {
+            setUserRole(role);
+          }
+        }
+        
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    );
 
     return () => {
-      console.log('[Auth] Cleaning up auth provider...');
       isMounted = false;
       clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   }, []);
 
+<<<<<<< HEAD
   // FUNCIÓN DE LOGIN CORREGIDA con asignación directa de rol
+=======
+  // Sign in with email and password
+>>>>>>> 5513dfe725908e1a265e54d7d88c2a05dbde748b
   const signIn = async (email: string, password: string) => {
     try {
-      console.log(`[Auth] Attempting login with email: ${email}`);
-      
       const { error, data } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
       
       if (error) {
-        console.error('[Auth] Sign in error:', error);
-        return { error };
+        throw error;
       }
       
+<<<<<<< HEAD
       if (!data.user) {
         console.error('[Auth] No user data returned from sign in');
         return { error: new Error('No user data returned from sign in') };
@@ -340,16 +426,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } else {
           setUserRole('USER');
         }
+=======
+      // Fetch user role after successful login
+      if (data.user) {
+        const role = await fetchUserRole(data.user.id);
+        setUserRole(role);
+>>>>>>> 5513dfe725908e1a265e54d7d88c2a05dbde748b
       }
       
       return { error: null };
     } catch (error: any) {
-      console.error('[Auth] Error in signIn:', error);
       return { error };
     }
   };
 
-  // Sign up with default role assignment
+  // Sign up with email and password
   const signUp = async (email: string, password: string) => {
     try {
       const { error, data } = await supabase.auth.signUp({
@@ -358,61 +449,52 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
       
       if (error) {
-        console.error('[Auth] Sign up error:', error);
-        return { error, data: null };
+        throw error;
       }
-      
-      console.log('[Auth] Sign up successful for:', email);
       
       // Create role assignment for new user with default USER role
       if (data.user) {
-        console.log('[Auth] Assigning default USER role to new user:', data.user.id);
-        
-        // Default to role_id 1 (USER)
-        let userRoleId = 1;
+        // First check if the user_roles table has a USER role and get its ID
+        let userRoleId = 1; // Default assumption
         
         try {
-          // Attempt to verify the correct USER role ID from user_roles table
-          const { data: roleData, error: roleQueryError } = await supabase
+          const { data: roleData } = await supabase
             .from('user_roles')
             .select('id')
             .eq('name', 'USER')
             .single();
             
-          if (roleQueryError) {
-            console.error('[Auth] Error finding USER role ID:', roleQueryError);
-          } else if (roleData) {
+          if (roleData) {
             userRoleId = roleData.id;
-            console.log('[Auth] Found USER role ID:', userRoleId);
           }
         } catch (e) {
-          console.error('[Auth] Error finding USER role ID, using default 1:', e);
+          console.error('Error finding USER role ID, using default 1:', e);
         }
         
-        // Insert role assignment
         const { error: roleError } = await supabase
           .from('user_role_assignments')
-          .insert([{
-            user_id: data.user.id,
-            role_id: userRoleId
-          }]);
+          .insert([
+            {
+              user_id: data.user.id,
+              role_id: userRoleId,
+              created_at: new Date().toISOString()
+            }
+          ]);
           
         if (roleError) {
-          console.error('[Auth] Error assigning default role:', roleError);
-        } else {
-          console.log('[Auth] Successfully assigned role_id', userRoleId, 'to user', data.user.id);
+          console.error('Error assigning default role:', roleError);
         }
       }
       
       return { error: null, data };
     } catch (error: any) {
-      console.error('[Auth] Error in signUp:', error);
       return { error, data: null };
     }
   };
 
-  // FUNCIÓN DE CIERRE DE SESIÓN CORREGIDA
+  // Sign out
   const signOut = async () => {
+<<<<<<< HEAD
     try {
       console.log('[Auth] Iniciando proceso de cierre de sesión...');
       
@@ -438,6 +520,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       window.location.href = '/';
       throw error;
     }
+=======
+    await supabase.auth.signOut();
+    setUserRole(null);
+>>>>>>> 5513dfe725908e1a265e54d7d88c2a05dbde748b
   };
 
   // Reset password
@@ -448,14 +534,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
       
       if (error) {
-        console.error('[Auth] Reset password error:', error);
-        return { error };
+        throw error;
       }
       
-      console.log('[Auth] Password reset email sent to:', email);
       return { error: null };
     } catch (error: any) {
-      console.error('[Auth] Error in resetPassword:', error);
       return { error };
     }
   };
