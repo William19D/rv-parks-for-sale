@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -35,6 +36,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { 
   Search, 
   ChevronDown, 
@@ -59,6 +62,7 @@ interface Listing {
   price: number;
   status: string;
   createdAt: string;
+  rejection_reason?: string;
   location: {
     city: string;
     state: string;
@@ -84,7 +88,9 @@ const AdminDashboard = () => {
   const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
   const [isStatusDialogOpen, setIsStatusDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [newStatus, setNewStatus] = useState<string>('');
+  const [rejectionReason, setRejectionReason] = useState('');
   
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -129,6 +135,7 @@ const AdminDashboard = () => {
             price,
             status,
             createdAt,
+            rejection_reason,
             location,
             broker:broker_id (
               name,
@@ -202,7 +209,14 @@ const AdminDashboard = () => {
   const openStatusDialog = (listing: Listing, status: string) => {
     setSelectedListing(listing);
     setNewStatus(status);
-    setIsStatusDialogOpen(true);
+    
+    // If rejecting, open rejection dialog instead
+    if (status === 'rejected') {
+      setRejectionReason(listing.rejection_reason || '');
+      setIsRejectDialogOpen(true);
+    } else {
+      setIsStatusDialogOpen(true);
+    }
   };
 
   // Open delete confirmation dialog
@@ -211,14 +225,17 @@ const AdminDashboard = () => {
     setIsDeleteDialogOpen(true);
   };
 
-  // Update listing status
-  const updateListingStatus = async () => {
-    if (!selectedListing || !newStatus) return;
+  // Handle rejection submission
+  const handleReject = async () => {
+    if (!selectedListing) return;
     
     try {
       const { error } = await supabase
         .from('listings')
-        .update({ status: newStatus })
+        .update({ 
+          status: 'rejected',
+          rejection_reason: rejectionReason.trim() || 'No reason provided' 
+        })
         .eq('id', selectedListing.id);
       
       if (error) throw error;
@@ -226,7 +243,61 @@ const AdminDashboard = () => {
       // Update local state
       const updatedListings = listings.map(listing => 
         listing.id === selectedListing.id 
-          ? { ...listing, status: newStatus } 
+          ? { 
+              ...listing, 
+              status: 'rejected',
+              rejection_reason: rejectionReason.trim() || 'No reason provided'
+            } 
+          : listing
+      );
+      
+      setListings(updatedListings);
+      setFilteredListings(updatedListings.filter(listing => 
+        activeTab === 'all' || listing.status === activeTab
+      ));
+      
+      toast({
+        title: "Listing Rejected",
+        description: "Listing has been rejected with reason provided",
+      });
+    } catch (error) {
+      console.error('Error rejecting listing:', error);
+      toast({
+        title: "Error",
+        description: "Failed to reject listing",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRejectDialogOpen(false);
+      setRejectionReason('');
+    }
+  };
+
+  // Update listing status
+  const updateListingStatus = async () => {
+    if (!selectedListing || !newStatus) return;
+    
+    try {
+      // If approving, clear any rejection reason
+      const updateData = newStatus === 'approved' 
+        ? { status: newStatus, rejection_reason: null }
+        : { status: newStatus };
+        
+      const { error } = await supabase
+        .from('listings')
+        .update(updateData)
+        .eq('id', selectedListing.id);
+      
+      if (error) throw error;
+      
+      // Update local state
+      const updatedListings = listings.map(listing => 
+        listing.id === selectedListing.id 
+          ? { 
+              ...listing, 
+              status: newStatus,
+              ...(newStatus === 'approved' && { rejection_reason: undefined })
+            }
           : listing
       );
       
@@ -395,6 +466,11 @@ const AdminDashboard = () => {
                     <TableCell>{formatCurrency(listing.price)}</TableCell>
                     <TableCell>
                       <StatusBadge status={listing.status || 'pending'} />
+                      {listing.status === 'rejected' && listing.rejection_reason && (
+                        <div className="text-xs text-gray-600 mt-1 truncate max-w-[200px]" title={listing.rejection_reason}>
+                          Reason: {listing.rejection_reason}
+                        </div>
+                      )}
                     </TableCell>
                     <TableCell>{formatDate(listing.createdAt)}</TableCell>
                     <TableCell>
@@ -468,7 +544,6 @@ const AdminDashboard = () => {
             <AlertDialogTitle>Update Listing Status</AlertDialogTitle>
             <AlertDialogDescription>
               {newStatus === 'approved' && "This listing will be visible to all users after approval."}
-              {newStatus === 'rejected' && "This listing will be hidden from public view."}
               {newStatus === 'pending' && "This listing will be marked as pending review."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -478,11 +553,45 @@ const AdminDashboard = () => {
               onClick={updateListingStatus}
               className={
                 newStatus === 'approved' ? 'bg-green-600 hover:bg-green-700' :
-                newStatus === 'rejected' ? 'bg-red-600 hover:bg-red-700' :
                 'bg-yellow-600 hover:bg-yellow-700'
               }
             >
               Confirm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Rejection Dialog with Reason */}
+      <AlertDialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reject Listing</AlertDialogTitle>
+            <AlertDialogDescription>
+              Please provide a reason for rejecting this listing. This information will be visible to the broker.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="rejection-reason">Rejection Reason</Label>
+              <Textarea 
+                id="rejection-reason"
+                placeholder="Explain why this listing is being rejected..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                rows={4}
+              />
+            </div>
+          </div>
+          
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleReject}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Reject Listing
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
