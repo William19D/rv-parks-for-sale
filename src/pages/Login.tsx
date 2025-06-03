@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -18,11 +17,18 @@ const Login = () => {
   const { toast } = useToast();
   const { user, userRole, signIn } = useAuth();
 
-  // Redirect if already logged in
+  // Verificamos cuando cambia userRole para hacer la redirección correctamente
   useEffect(() => {
-    if (user && userRole !== null) {
-      const from = location.state?.from?.pathname || (userRole === 'ADMIN' ? '/admin/dashboard' : '/');
-      navigate(from, { replace: true });
+    console.log("Login effect - User:", user?.id, "Role:", userRole);
+    
+    if (user && userRole) {
+      // Importante: Usar un pequeño timeout para asegurar que la redirección 
+      // ocurra después de que se actualice el estado de autenticación
+      setTimeout(() => {
+        const from = location.state?.from?.pathname || (userRole === 'ADMIN' ? '/admin/dashboard' : '/');
+        console.log(`Redirecting user with role ${userRole} to: ${from}`);
+        navigate(from, { replace: true });
+      }, 100);
     }
   }, [user, userRole, navigate, location.state]);
 
@@ -70,10 +76,11 @@ const Login = () => {
           description: error.message,
           variant: "destructive",
         });
+        setLoading(false);
         return;
       }
       
-      // Success toast - the redirect will be handled by the useEffect above
+      // La redirección se manejará en el useEffect
       toast({
         title: "Welcome!",
         description: "You have successfully signed in",
@@ -86,7 +93,6 @@ const Login = () => {
         description: "An unexpected error occurred. Please try again.",
         variant: "destructive",
       });
-    } finally {
       setLoading(false);
     }
   };

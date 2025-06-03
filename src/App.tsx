@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 
 // Pages
 import Index from "./pages/Index";
@@ -19,7 +19,6 @@ import ResetPassword from "./pages/ResetPassword";
 import AuthenticationSuccess from "./pages/AuthenticationSuccess";
 import AuthCallback from "./pages/AuthCallback";
 import EmailVerification from "./pages/EmailVerification";
-// Fix: Ensure ListingEdit is properly imported
 import ListingEdit from "./pages/ListingEdit";
 
 // Admin Pages
@@ -30,58 +29,9 @@ import AdminListings from "./pages/admin/Listings";
 import { useAuth, AuthProvider } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
-import { AdminHeader } from "@/components/admin/AdminHeader";
-import { AdminSidebar } from "@/components/admin/AdminSidebar";
+import { AdminRoute } from "@/components/admin/AdminRoute";  // Use the single AdminRoute component
 
 const queryClient = new QueryClient();
-
-// Admin layout component
-const AdminLayout = ({ children }: { children: React.ReactNode }) => {
-  return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
-      <AdminHeader />
-      <HeaderSpacer />
-      <div className="flex flex-1">
-        <AdminSidebar />
-        <div className="flex-1 p-6 overflow-y-auto">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Modified AdminRoute - now checks for proper authentication and admin role
-const AdminRoute = ({ children }: { children: React.ReactNode }) => {
-  const { user, userRole, loading } = useAuth();
-  
-  // Show loading while checking authentication
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
-        <p className="mt-4 text-gray-600">Loading...</p>
-      </div>
-    );
-  }
-  
-  // Redirect non-authenticated users to login
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-  
-  // Redirect non-admin users to home
-  if (userRole !== 'ADMIN') {
-    return <Navigate to="/" replace />;
-  }
-  
-  // Render admin layout for authenticated admin users
-  return (
-    <AdminLayout>
-      {children}
-    </AdminLayout>
-  );
-};
 
 // Componente que maneja las rutas protegidas y públicas
 const AppRoutes = () => {
@@ -90,6 +40,12 @@ const AppRoutes = () => {
   
   // If in admin routes, don't show the standard header
   const isAdminRoute = location.pathname.startsWith('/admin');
+  
+  // Log route changes for debugging
+  useEffect(() => {
+    console.log(`[Router] Route changed to: ${location.pathname}`);
+    console.log(`[Router] Current auth state - User: ${user?.id}, Role: ${userRole}`);
+  }, [location.pathname, user, userRole]);
   
   // Show loading for authentication check
   if (loading) {
@@ -117,7 +73,7 @@ const AppRoutes = () => {
         <Route path="/listings" element={<Listings />} />
         <Route path="/listings/:id" element={<ListingDetail />} />
         
-        {/* Admin Routes - Now properly checks for admin role */}
+        {/* Admin Routes */}
         <Route path="/admin/dashboard" element={
           <AdminRoute>
             <AdminDashboard />
