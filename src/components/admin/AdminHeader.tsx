@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -13,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Bell, User, LogOut, Settings, ChevronDown } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 export function AdminHeader() {
@@ -31,20 +31,16 @@ export function AdminHeader() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Simplified logout function
+  // Enhanced logout function that ensures redirection
   const handleLogout = async () => {
     try {
-      console.log("Starting logout process...");
+      // Call Supabase auth signOut directly
+      await supabase.auth.signOut();
       
-      // Use the signOut function from useAuth hook
-      await signOut();
-      
-      // Clear any additional localStorage items
+      // Clear all auth-related localStorage items
       localStorage.removeItem('userRole');
       localStorage.removeItem('forceAdmin');
       localStorage.removeItem('bypassAuth');
-      
-      console.log("Logout successful, redirecting to home...");
       
       // Show success toast
       toast({
@@ -52,11 +48,12 @@ export function AdminHeader() {
         description: "You have been successfully logged out",
       });
       
-      // Navigate to home page
-      navigate("/", { replace: true });
-      
+      // Force navigation to home page
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 500);
     } catch (error) {
-      console.error("Error during logout:", error);
+      console.error("Error signing out:", error);
       toast({
         title: "Error",
         description: "There was a problem logging out. Please try again.",
