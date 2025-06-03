@@ -256,10 +256,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Sign out
+  // Enhanced sign out function
   const signOut = async () => {
-    await supabase.auth.signOut();
-    setUserRole(null);
+    try {
+      console.log("Signing out user...");
+      
+      // Sign out from Supabase
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error("Supabase signOut error:", error);
+        throw error;
+      }
+      
+      // Clear local state immediately
+      setUser(null);
+      setSession(null);
+      setUserRole(null);
+      
+      console.log("User signed out successfully");
+      
+    } catch (error) {
+      console.error("Error in signOut:", error);
+      throw error;
+    }
   };
 
   // Reset password
