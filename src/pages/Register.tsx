@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -191,14 +192,14 @@ const Register = () => {
               title: "Registration successful!",
               description: "Check your email to confirm your account",
             });
-            navigate("/login");
+            navigate("/verify-email");
           }
         } else {
           toast({
             title: "Registration issue",
             description: "Account created but user data not available. Please try logging in.",
           });
-          navigate("/login");
+          navigate("/verify-email");
         }
       }
     } catch (error) {

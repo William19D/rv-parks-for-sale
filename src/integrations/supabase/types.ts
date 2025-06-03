@@ -9,13 +9,171 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      listing_images: {
+        Row: {
+          created_at: string | null
+          id: number
+          is_primary: boolean | null
+          listing_id: number | null
+          position: number | null
+          storage_path: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          is_primary?: boolean | null
+          listing_id?: number | null
+          position?: number | null
+          storage_path: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          is_primary?: boolean | null
+          listing_id?: number | null
+          position?: number | null
+          storage_path?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_images_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      listings: {
+        Row: {
+          address: string | null
+          amenities: Json | null
+          annual_revenue: number | null
+          cap_rate: number | null
+          city: string
+          created_at: string | null
+          description: string
+          id: number
+          latitude: number | null
+          location_set: boolean | null
+          longitude: number | null
+          num_sites: number | null
+          occupancy_rate: number | null
+          price: number
+          property_type: string
+          state: string
+          status: string | null
+          title: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          address?: string | null
+          amenities?: Json | null
+          annual_revenue?: number | null
+          cap_rate?: number | null
+          city: string
+          created_at?: string | null
+          description: string
+          id?: number
+          latitude?: number | null
+          location_set?: boolean | null
+          longitude?: number | null
+          num_sites?: number | null
+          occupancy_rate?: number | null
+          price: number
+          property_type: string
+          state: string
+          status?: string | null
+          title: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          address?: string | null
+          amenities?: Json | null
+          annual_revenue?: number | null
+          cap_rate?: number | null
+          city?: string
+          created_at?: string | null
+          description?: string
+          id?: number
+          latitude?: number | null
+          location_set?: boolean | null
+          longitude?: number | null
+          num_sites?: number | null
+          occupancy_rate?: number | null
+          price?: number
+          property_type?: string
+          state?: string
+          status?: string | null
+          title?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_role_assignments: {
+        Row: {
+          created_at: string | null
+          id: string
+          role_id: number | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          role_id?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          role_id?: number | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_role_assignments_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "user_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          id: number
+          name: string
+        }
+        Insert: {
+          id?: number
+          name: string
+        }
+        Update: {
+          id?: number
+          name?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      check_user_role: {
+        Args: { user_id_param: string; role_id_param: number }
+        Returns: boolean
+      }
+      is_admin: {
+        Args: { user_id_param: string }
+        Returns: boolean
+      }
+      user_has_role: {
+        Args: { user_id: string; role_name: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

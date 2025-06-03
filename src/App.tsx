@@ -18,6 +18,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword"; 
 import AuthenticationSuccess from "./pages/AuthenticationSuccess";
 import AuthCallback from "./pages/AuthCallback";
+import EmailVerification from "./pages/EmailVerification";
 // Fix: Ensure ListingEdit is properly imported
 import ListingEdit from "./pages/ListingEdit";
 
@@ -142,6 +143,7 @@ const AppRoutes = () => {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/auth/success" element={<AuthenticationSuccess />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/verify-email" element={<EmailVerification />} />
 
         {/* Ruta de respaldo para URLs no encontradas */}
         <Route path="*" element={<NotFound />} />
