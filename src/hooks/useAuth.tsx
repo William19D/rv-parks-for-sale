@@ -34,164 +34,177 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userRole, setUserRole] = useState<UserRole>(null);
   const { toast } = useToast();
 
-  // Function to fetch user role
+  // Function to fetch user role from role_id with a timeout
   const fetchUserRole = async (userId: string): Promise<UserRole> => {
-    if (!userId) {
-      console.log('[Auth] No userId provided to fetchUserRole');
-      return null;
-    }
+    if (!userId) return null;
     
     try {
-      console.log('[Auth] Fetching role for user:', userId);
+      console.log('Fetching role for user:', userId);
       
+      // Get the user's role assignments
       const { data: roleAssignments, error: roleError } = await supabase
         .from('user_role_assignments')
         .select('role_id')
         .eq('user_id', userId);
       
-      console.log('[Auth] Role assignments query result:', { roleAssignments, roleError });
+      console.log('Role assignments for user:', userId, roleAssignments);
       
       if (roleError) {
-        console.error('[Auth] Error fetching role assignments:', roleError);
-        return 'USER'; // Default to USER on error
-      }
-      
-      if (!roleAssignments || roleAssignments.length === 0) {
-        console.log('[Auth] No role assignments found, defaulting to USER');
+        console.error('Error fetching role assignments:', roleError);
         return 'USER';
       }
       
-      // Check for admin role (role_id = 2)
-      const hasAdminRole = roleAssignments.some(assignment => assignment.role_id === 2);
-      if (hasAdminRole) {
-        console.log('[Auth] User has ADMIN role (role_id = 2)');
+      if (!roleAssignments || roleAssignments.length === 0) {
+        console.log('No role assignments found');
+        return 'USER';
+      }
+      
+      // Check if user has admin role (role_id = 2)
+      if (roleAssignments.some(ra => ra.role_id === 2)) {
+        console.log('Found admin role (ID 2)');
         return 'ADMIN';
       }
       
-      // Check for broker role (role_id = 3)
-      const hasBrokerRole = roleAssignments.some(assignment => assignment.role_id === 3);
-      if (hasBrokerRole) {
-        console.log('[Auth] User has BROKER role (role_id = 3)');
+      // Check if user has broker role (role_id = 3, assuming broker is role 3)
+      if (roleAssignments.some(ra => ra.role_id === 3)) {
+        console.log('Found broker role (ID 3)');
         return 'BROKER';
       }
       
-      console.log('[Auth] User has USER role (default)');
+      // Default to USER
+      console.log('No special role found, defaulting to USER');
       return 'USER';
     } catch (error) {
-      console.error('[Auth] Error in fetchUserRole:', error);
-      return 'USER'; // Default to USER on error
+      console.error('Error in fetchUserRole:', error);
+      return 'USER';
     }
   };
 
-  // Initialize auth state
   useEffect(() => {
-    console.log('[Auth] Initializing auth provider...');
     let isMounted = true;
     
-    const initializeAuth = async () => {
+    const setData = async () => {
       try {
-        // Get current session
-        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        // First quickly check if there's a session
+        const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('[Auth] Error getting session:', error);
           if (isMounted) {
             setLoading(false);
           }
           return;
         }
         
-        if (currentSession) {
-          console.log('[Auth] Found existing session for user:', currentSession.user.id);
+        // If no session, we can immediately set loading to false
+        if (!session) {
           if (isMounted) {
-            setSession(currentSession);
-            setUser(currentSession.user);
-            
-            // Fetch user role
-            const role = await fetchUserRole(currentSession.user.id);
-            console.log('[Auth] Fetched role for existing session:', role);
-            setUserRole(role);
+            setSession(null);
+            setUser(null);
+            setUserRole(null);
+            setLoading(false);
           }
-        } else {
-          console.log('[Auth] No existing session found');
+          return;
         }
         
+        // We have a session, set the session and user
+        if (isMounted) {
+          setSession(session);
+          setUser(session.user || null);
+        }
+        
+        // Fetch role if we have a user
+        if (session?.user) {
+          const role = await fetchUserRole(session.user.id);
+          
+          if (isMounted) {
+            setUserRole(role);
+          }
+        }
+        
+        // Set loading to false after everything is done
         if (isMounted) {
           setLoading(false);
         }
       } catch (e) {
-        console.error('[Auth] Error in initializeAuth:', e);
+        console.error('Unexpected error in setData:', e);
         if (isMounted) {
           setLoading(false);
         }
       }
     };
     
-    // Set up auth state change listener
+    // Safety timeout to prevent infinite loading
+    const safetyTimeout = setTimeout(() => {
+      if (isMounted && loading) {
+        setLoading(false);
+      }
+    }, 3000);
+    
+    setData();
+    
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
-        console.log('[Auth] Auth state changed. Event:', event, 'Session:', !!newSession);
+      async (_event, session) => {
+        if (isMounted) {
+          setSession(session);
+          setUser(session?.user || null);
+        }
+        
+        // If no session, no need to check roles
+        if (!session) {
+          if (isMounted) {
+            setUserRole(null);
+            setLoading(false);
+          }
+          return;
+        }
+        
+        // Only check roles for authenticated users
+        if (session?.user) {
+          const role = await fetchUserRole(session.user.id);
+          
+          if (isMounted) {
+            setUserRole(role);
+          }
+        }
         
         if (isMounted) {
-          if (newSession) {
-            console.log('[Auth] Setting new session for user:', newSession.user.id);
-            setSession(newSession);
-            setUser(newSession.user);
-            
-            // Fetch role for new session
-            const role = await fetchUserRole(newSession.user.id);
-            console.log('[Auth] Fetched role for new session:', role);
-            setUserRole(role);
-          } else {
-            console.log('[Auth] Clearing session and user data');
-            setSession(null);
-            setUser(null);
-            setUserRole(null);
-          }
+          setLoading(false);
         }
       }
     );
-    
-    // Initialize auth
-    initializeAuth();
 
     return () => {
-      console.log('[Auth] Cleaning up auth provider...');
       isMounted = false;
+      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   }, []);
 
+  // Sign in with email and password
   const signIn = async (email: string, password: string) => {
     try {
-      console.log(`[Auth] Attempting login with email: ${email}`);
-      
       const { error, data } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
       
       if (error) {
-        console.error('[Auth] Sign in error:', error);
-        return { error };
+        throw error;
       }
       
-      if (!data.user) {
-        console.error('[Auth] No user data returned from sign in');
-        return { error: new Error('No user data returned from sign in') };
+      // Fetch user role after successful login
+      if (data.user) {
+        const role = await fetchUserRole(data.user.id);
+        setUserRole(role);
       }
       
-      console.log(`[Auth] Successfully authenticated user: ${data.user.id}`);
-      
-      // The auth state change listener will handle setting user, session, and role
       return { error: null };
     } catch (error: any) {
-      console.error('[Auth] Error in signIn:', error);
       return { error };
     }
   };
 
-  // Sign up with default role assignment
+  // Sign up with email and password
   const signUp = async (email: string, password: string) => {
     try {
       const { error, data } = await supabase.auth.signUp({
@@ -200,77 +213,53 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
       
       if (error) {
-        console.error('[Auth] Sign up error:', error);
-        return { error, data: null };
+        throw error;
       }
-      
-      console.log('[Auth] Sign up successful for:', email);
       
       // Create role assignment for new user with default USER role
       if (data.user) {
-        console.log('[Auth] Assigning default USER role to new user:', data.user.id);
-        
-        // Default to role_id 1 (USER)
-        let userRoleId = 1;
+        // First check if the user_roles table has a USER role and get its ID
+        let userRoleId = 1; // Default assumption
         
         try {
-          // Attempt to verify the correct USER role ID from user_roles table
-          const { data: roleData, error: roleQueryError } = await supabase
+          const { data: roleData } = await supabase
             .from('user_roles')
             .select('id')
             .eq('name', 'USER')
             .single();
             
-          if (roleQueryError) {
-            console.error('[Auth] Error finding USER role ID:', roleQueryError);
-          } else if (roleData) {
+          if (roleData) {
             userRoleId = roleData.id;
-            console.log('[Auth] Found USER role ID:', userRoleId);
           }
         } catch (e) {
-          console.error('[Auth] Error finding USER role ID, using default 1:', e);
+          console.error('Error finding USER role ID, using default 1:', e);
         }
         
-        // Insert role assignment
         const { error: roleError } = await supabase
           .from('user_role_assignments')
-          .insert([{
-            user_id: data.user.id,
-            role_id: userRoleId
-          }]);
+          .insert([
+            {
+              user_id: data.user.id,
+              role_id: userRoleId,
+              created_at: new Date().toISOString()
+            }
+          ]);
           
         if (roleError) {
-          console.error('[Auth] Error assigning default role:', roleError);
-        } else {
-          console.log('[Auth] Successfully assigned role_id', userRoleId, 'to user', data.user.id);
+          console.error('Error assigning default role:', roleError);
         }
       }
       
       return { error: null, data };
     } catch (error: any) {
-      console.error('[Auth] Error in signUp:', error);
       return { error, data: null };
     }
   };
 
-  // FUNCIÓN DE CIERRE DE SESIÓN CORREGIDA
+  // Sign out
   const signOut = async () => {
-    try {
-      console.log('[Auth] Starting logout process...');
-      
-      // Clear local state first
-      setUser(null);
-      setSession(null);
-      setUserRole(null);
-      
-      // Sign out from Supabase
-      await supabase.auth.signOut({ scope: 'global' });
-      
-      console.log('[Auth] Logout completed successfully');
-    } catch (error) {
-      console.error('[Auth] Error in signOut function:', error);
-      throw error;
-    }
+    await supabase.auth.signOut();
+    setUserRole(null);
   };
 
   // Reset password
@@ -281,14 +270,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
       
       if (error) {
-        console.error('[Auth] Reset password error:', error);
-        return { error };
+        throw error;
       }
       
-      console.log('[Auth] Password reset email sent to:', email);
       return { error: null };
     } catch (error: any) {
-      console.error('[Auth] Error in resetPassword:', error);
       return { error };
     }
   };
