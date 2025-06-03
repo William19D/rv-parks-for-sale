@@ -1,11 +1,12 @@
+
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
 
 const Login = () => {
@@ -13,65 +14,17 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
+  const { user, userRole, signIn } = useAuth();
 
-  // Check if there's already a session on component mount
+  // Redirect if already logged in
   useEffect(() => {
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session?.user) {
-        // User is already logged in, check for admin role and redirect
-        await checkRoleAndRedirect(session.user.id);
-      }
-    };
-    
-    checkSession();
-  }, []);
-  
-  // Function to check user role and redirect accordingly
-  const checkRoleAndRedirect = async (userId: string) => {
-    try {
-      console.log('Checking role for user:', userId);
-      
-      // Check if user has admin role (role_id = 2)
-      const { data: roleAssignments, error } = await supabase
-        .from('user_role_assignments')
-        .select('role_id')
-        .eq('user_id', userId);
-      
-      console.log('Role assignments:', roleAssignments, 'Error:', error);
-      
-      if (!error && roleAssignments && roleAssignments.length > 0) {
-        // Check if user has admin role (role_id = 2)
-        const hasAdminRole = roleAssignments.some(assignment => assignment.role_id === 2);
-        
-        if (hasAdminRole) {
-          console.log('User has admin role, redirecting to admin dashboard');
-          localStorage.setItem('userRole', 'ADMIN');
-          navigate("/admin/dashboard");
-          return 'ADMIN';
-        } else {
-          console.log('User is regular user, redirecting to home');
-          localStorage.setItem('userRole', 'USER');
-          navigate("/");
-          return 'USER';
-        }
-      } else {
-        // No role assignments found, treat as regular user
-        console.log('No role assignments found, treating as regular user');
-        localStorage.setItem('userRole', 'USER');
-        navigate("/");
-        return 'USER';
-      }
-    } catch (error) {
-      console.error("Error checking role:", error);
-      // Default to USER on error
-      localStorage.setItem('userRole', 'USER');
-      navigate("/");
-      return 'USER';
+    if (user && userRole !== null) {
+      const from = location.state?.from?.pathname || (userRole === 'ADMIN' ? '/admin/dashboard' : '/');
+      navigate(from, { replace: true });
     }
-  };
+  }, [user, userRole, navigate, location.state]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,11 +62,7 @@ const Login = () => {
     try {
       console.log(`Attempting login with email: ${email}`);
       
-      // Sign in with Supabase
-      const { data: authData, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      const { error } = await signIn(email, password);
 
       if (error) {
         toast({
@@ -124,36 +73,17 @@ const Login = () => {
         return;
       }
       
-      if (!authData || !authData.user) {
-        toast({
-          title: "Error",
-          description: "Authentication failed",
-          variant: "destructive",
-        });
-        return;
-      }
+      // Success toast - the redirect will be handled by the useEffect above
+      toast({
+        title: "Welcome!",
+        description: "You have successfully signed in",
+      });
       
-      console.log(`Successfully authenticated user: ${authData.user.id}`);
-
-      // Check user role and redirect accordingly
-      const userRole = await checkRoleAndRedirect(authData.user.id);
-      
-      if (userRole === 'ADMIN') {
-        toast({
-          title: "Admin Access Granted",
-          description: "Welcome to the admin dashboard",
-        });
-      } else {
-        toast({
-          title: "Welcome!",
-          description: "You have successfully signed in",
-        });
-      }
     } catch (error: any) {
       console.error('Login error:', error);
       toast({
         title: "Error",
-        description: "Configuration error. Check your Supabase connection.",
+        description: "An unexpected error occurred. Please try again.",
         variant: "destructive",
       });
     } finally {

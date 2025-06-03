@@ -1,4 +1,3 @@
-
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Session, User } from '@supabase/supabase-js';
@@ -181,26 +180,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  // Sign in with email and password
+  // Enhanced sign in with role-based redirection
   const signIn = async (email: string, password: string) => {
     try {
+      console.log(`Attempting login with email: ${email}`);
+      
       const { error, data } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
       
       if (error) {
+        console.error('Sign in error:', error);
         throw error;
       }
       
-      // Fetch user role after successful login
-      if (data.user) {
-        const role = await fetchUserRole(data.user.id);
-        setUserRole(role);
+      if (!data.user) {
+        throw new Error('No user data returned from sign in');
       }
+      
+      console.log(`Successfully authenticated user: ${data.user.id}`);
+      
+      // Fetch user role after successful login
+      const role = await fetchUserRole(data.user.id);
+      console.log(`User role determined: ${role}`);
+      
+      // Update state
+      setUser(data.user);
+      setSession(data.session);
+      setUserRole(role);
       
       return { error: null };
     } catch (error: any) {
+      console.error('Error in signIn:', error);
       return { error };
     }
   };

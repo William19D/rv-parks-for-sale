@@ -51,10 +51,31 @@ const AdminLayout = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-// Modified AdminRoute - always allows access
+// Modified AdminRoute - now checks for proper authentication and admin role
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
-  // Simply return the admin layout with children
-  // This bypasses all authentication checks
+  const { user, userRole, loading } = useAuth();
+  
+  // Show loading while checking authentication
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
+        <p className="mt-4 text-gray-600">Loading...</p>
+      </div>
+    );
+  }
+  
+  // Redirect non-authenticated users to login
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  // Redirect non-admin users to home
+  if (userRole !== 'ADMIN') {
+    return <Navigate to="/" replace />;
+  }
+  
+  // Render admin layout for authenticated admin users
   return (
     <AdminLayout>
       {children}
@@ -70,8 +91,8 @@ const AppRoutes = () => {
   // If in admin routes, don't show the standard header
   const isAdminRoute = location.pathname.startsWith('/admin');
   
-  // Only show loading for non-admin routes
-  if (loading && !isAdminRoute && !localStorage.getItem('supabase.auth.token')) {
+  // Show loading for authentication check
+  if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
@@ -96,7 +117,7 @@ const AppRoutes = () => {
         <Route path="/listings" element={<Listings />} />
         <Route path="/listings/:id" element={<ListingDetail />} />
         
-        {/* Admin Routes - No longer checks for ADMIN role */}
+        {/* Admin Routes - Now properly checks for admin role */}
         <Route path="/admin/dashboard" element={
           <AdminRoute>
             <AdminDashboard />
@@ -109,7 +130,6 @@ const AppRoutes = () => {
         } />
         <Route path="/admin/listings/:id/edit" element={
           <AdminRoute>
-            {/* Fix: Using the ListingEdit component */}
             {ListingEdit ? <ListingEdit /> : <div>Loading editor...</div>}
           </AdminRoute>
         } />
