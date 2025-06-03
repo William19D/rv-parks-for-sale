@@ -1,9 +1,10 @@
+
 import { useState, useEffect } from "react";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Plus, MessageCircle, Eye, EditIcon, TrashIcon, Loader2, BarChart, DollarSign, ListChecks } from "lucide-react";
+import { Plus, MessageCircle, Eye, EditIcon, TrashIcon, Loader2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +17,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 // Define el tipo para una imagen
 interface ListingImage {
@@ -39,27 +39,11 @@ interface Listing {
   primaryImage?: string;
 }
 
-// Interfaz para las estadísticas
-interface BrokerStatistics {
-  totalListings: number;
-  publishedListings: number;
-  pendingListings: number;
-  totalValue: number;
-  averagePrice: number;
-}
-
 const BrokerDashboard = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<BrokerStatistics>({
-    totalListings: 0,
-    publishedListings: 0,
-    pendingListings: 0,
-    totalValue: 0,
-    averagePrice: 0
-  });
   
   // Cargar listados del usuario y sus imágenes
   useEffect(() => {
@@ -81,20 +65,6 @@ const BrokerDashboard = () => {
           setLoading(false);
           return;
         }
-        
-        // Calcular las estadísticas
-        const publishedCount = listingsData.filter(l => l.status === 'published').length;
-        const pendingCount = listingsData.filter(l => l.status === 'pending').length;
-        const totalPrice = listingsData.reduce((sum, listing) => sum + (listing.price || 0), 0);
-        const avgPrice = listingsData.length > 0 ? totalPrice / listingsData.length : 0;
-        
-        setStats({
-          totalListings: listingsData.length,
-          publishedListings: publishedCount,
-          pendingListings: pendingCount,
-          totalValue: totalPrice,
-          averagePrice: avgPrice
-        });
         
         // Para cada listado, buscamos sus imágenes
         const listingsWithImages = await Promise.all(
@@ -163,19 +133,6 @@ const BrokerDashboard = () => {
       // Actualizar la lista de listados después de eliminar
       setListings(listings.filter(listing => listing.id !== id));
       
-      // Actualizar estadísticas
-      const deletedListing = listings.find(l => l.id === id);
-      if (deletedListing) {
-        setStats(prev => ({
-          ...prev,
-          totalListings: prev.totalListings - 1,
-          publishedListings: deletedListing.status === 'published' ? prev.publishedListings - 1 : prev.publishedListings,
-          pendingListings: deletedListing.status === 'pending' ? prev.pendingListings - 1 : prev.pendingListings,
-          totalValue: prev.totalValue - deletedListing.price,
-          averagePrice: (prev.totalListings - 1) > 0 ? (prev.totalValue - deletedListing.price) / (prev.totalListings - 1) : 0
-        }));
-      }
-      
       toast({
         title: "Listing deleted",
         description: "Your property listing has been successfully deleted"
@@ -230,7 +187,6 @@ const BrokerDashboard = () => {
             asChild 
             className="mt-4 md:mt-0 bg-[#f74f4f] hover:bg-[#e43c3c] text-white flex items-center gap-2"
           >
-            {/* Updated to use the correct path for new listing */}
             <Link to="/listings/new">
               <Plus className="h-4 w-4" />
               Add New Listing
@@ -239,65 +195,6 @@ const BrokerDashboard = () => {
         </div>
         
         <div className="space-y-8">
-          {/* Real-time Statistics Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Listings</CardTitle>
-                <BarChart className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.totalListings}</div>
-                <p className="text-xs text-muted-foreground">
-                  {stats.publishedListings} published, {stats.pendingListings} pending
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Portfolio Value</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatPrice(stats.totalValue)}</div>
-                <p className="text-xs text-muted-foreground">
-                  Across {stats.totalListings} properties
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Average Price</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatPrice(stats.averagePrice)}</div>
-                <p className="text-xs text-muted-foreground">
-                  Per property listing
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Listing Status</CardTitle>
-                <ListChecks className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {stats.totalListings > 0 
-                    ? `${Math.round((stats.publishedListings / stats.totalListings) * 100)}%` 
-                    : "0%"}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Published listings rate
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-          
           <div className="bg-white rounded-xl shadow-sm border border-gray-200">
             <div className="p-6 border-b border-gray-100">
               <h2 className="text-xl font-bold">Your Properties</h2>
@@ -322,7 +219,6 @@ const BrokerDashboard = () => {
                     className="bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
                     asChild
                   >
-                    {/* Updated to use the correct path for new listing */}
                     <Link to="/listings/new">
                       <Plus className="h-4 w-4 mr-1" />
                       Create Your First Listing
@@ -387,7 +283,6 @@ const BrokerDashboard = () => {
                               >
                                 <Eye className="h-4 w-4" />
                               </Link>
-                              {/* Updated to use the correct path for editing a listing */}
                               <Link 
                                 to={`/listings/${listing.id}/edit`} 
                                 className="p-1.5 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-600 transition-colors"
