@@ -21,34 +21,55 @@ const Login = () => {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
-        // User is already logged in, check for admin role directly
-        checkAdminAndRedirect(session.user.id);
+        // User is already logged in, check for admin role and redirect
+        await checkRoleAndRedirect(session.user.id);
       }
     };
     
     checkSession();
   }, []);
   
-  // Separate function to check admin status and redirect
-  const checkAdminAndRedirect = async (userId: string) => {
+  // Function to check user role and redirect accordingly
+  const checkRoleAndRedirect = async (userId: string) => {
     try {
-      // Using direct SQL query instead of the standard query
-      const { data, error } = await supabase.rpc('is_admin', { 
-        user_id_param: userId 
-      });
+      console.log('Checking role for user:', userId);
       
-      if (!error && data) {
-        // User is admin
-        localStorage.setItem('userRole', 'ADMIN');
-        navigate("/admin/dashboard");
+      // Check if user has admin role (role_id = 2)
+      const { data: roleAssignments, error } = await supabase
+        .from('user_role_assignments')
+        .select('role_id')
+        .eq('user_id', userId);
+      
+      console.log('Role assignments:', roleAssignments, 'Error:', error);
+      
+      if (!error && roleAssignments && roleAssignments.length > 0) {
+        // Check if user has admin role (role_id = 2)
+        const hasAdminRole = roleAssignments.some(assignment => assignment.role_id === 2);
+        
+        if (hasAdminRole) {
+          console.log('User has admin role, redirecting to admin dashboard');
+          localStorage.setItem('userRole', 'ADMIN');
+          navigate("/admin/dashboard");
+          return 'ADMIN';
+        } else {
+          console.log('User is regular user, redirecting to home');
+          localStorage.setItem('userRole', 'USER');
+          navigate("/");
+          return 'USER';
+        }
       } else {
-        // Not admin or error occurred
+        // No role assignments found, treat as regular user
+        console.log('No role assignments found, treating as regular user');
         localStorage.setItem('userRole', 'USER');
+        navigate("/");
+        return 'USER';
       }
     } catch (error) {
-      console.error("Error checking admin status:", error);
-      // Default to USER
+      console.error("Error checking role:", error);
+      // Default to USER on error
       localStorage.setItem('userRole', 'USER');
+      navigate("/");
+      return 'USER';
     }
   };
 
@@ -114,48 +135,19 @@ const Login = () => {
       
       console.log(`Successfully authenticated user: ${authData.user.id}`);
 
-      // For the admin test account, force admin
-      if (email === 'admintest@admintest.com') {
-        console.log("Admin account detected");
-        localStorage.setItem('userRole', 'ADMIN');
-        
+      // Check user role and redirect accordingly
+      const userRole = await checkRoleAndRedirect(authData.user.id);
+      
+      if (userRole === 'ADMIN') {
         toast({
           title: "Admin Access Granted",
           description: "Welcome to the admin dashboard",
         });
-        
-        navigate("/admin/dashboard");
-        return;
-      }
-      
-      // Use direct SQL query to check admin status
-      const { data: isAdmin, error: adminError } = await supabase.rpc('check_user_role', { 
-        user_id_param: authData.user.id,
-        role_id_param: 2 // Admin role ID
-      });
-      
-      console.log("Admin check result:", { isAdmin, adminError });
-      
-      if (!adminError && isAdmin) {
-        // User is admin
-        localStorage.setItem('userRole', 'ADMIN');
-        
-        toast({
-          title: "Admin Access Granted",
-          description: "Welcome to the admin dashboard",
-        });
-        
-        navigate("/admin/dashboard");
       } else {
-        // Not admin or error occurred
-        localStorage.setItem('userRole', 'USER');
-        
         toast({
           title: "Welcome!",
           description: "You have successfully signed in",
         });
-        
-        navigate("/");
       }
     } catch (error: any) {
       console.error('Login error:', error);

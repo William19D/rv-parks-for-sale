@@ -19,7 +19,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
-  loading: false, // Default to false for better user experience
+  loading: false,
   userRole: null,
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null, data: null }),
@@ -31,98 +31,54 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [userRole, setUserRole] = useState<UserRole>(null); // Default to null, not USER
+  const [userRole, setUserRole] = useState<UserRole>(null);
   const { toast } = useToast();
 
   // Function to fetch user role from role_id with a timeout
   const fetchUserRole = async (userId: string): Promise<UserRole> => {
-  if (!userId) return null; // Skip if no user ID
-  
-  try {
-    const rolePromise = new Promise<UserRole>(async (resolve) => {
-      try {
-        // First get the user's role assignments
-        const { data: roleAssignments, error: roleError } = await supabase
-          .from('user_role_assignments')
-          .select('role_id')
-          .eq('user_id', userId);
-        
-        console.log('Role assignments for user:', userId, roleAssignments);
-        
-        if (roleError) {
-          console.error('Error fetching role assignments:', roleError);
-          resolve('USER');
-          return;
-        }
-        
-        if (!roleAssignments || roleAssignments.length === 0) {
-          console.log('No role assignments found');
-          resolve('USER');
-          return;
-        }
-        
-        // IMPORTANT: Check directly for role_id 2 which is admin based on your screenshot
-        if (roleAssignments.some(ra => ra.role_id === 2)) {
-          console.log('Found admin role by ID 2');
-          resolve('ADMIN');
-          return;
-        }
-        
-        // Get all the role IDs assigned to this user
-        const roleIds = roleAssignments.map(ra => ra.role_id);
-        
-        // Get the role names from user_roles table as a backup check
-        const { data: roles, error: namesError } = await supabase
-          .from('user_roles')
-          .select('id, name')
-          .in('id', roleIds);
-          
-        if (namesError) {
-          console.error('Error fetching role names:', namesError);
-          resolve('USER');
-          return;
-        }
-        
-        if (!roles || roles.length === 0) {
-          resolve('USER');
-          return;
-        }
-        
-        // Check for ADMIN role by name as well
-        if (roles.some(role => role.name && typeof role.name === 'string' && role.name.toUpperCase() === 'ADMIN')) {
-          console.log('Found ADMIN role by name');
-          resolve('ADMIN');
-          return;
-        }
-        
-        // Then check for BROKER role
-        if (roles.some(role => role.name && typeof role.name === 'string' && role.name.toUpperCase() === 'BROKER')) {
-          resolve('BROKER');
-          return;
-        }
-        
-        // Default to USER
-        resolve('USER');
-      } catch (error) {
-        console.error('Error in role fetch:', error);
-        resolve('USER');
+    if (!userId) return null;
+    
+    try {
+      console.log('Fetching role for user:', userId);
+      
+      // Get the user's role assignments
+      const { data: roleAssignments, error: roleError } = await supabase
+        .from('user_role_assignments')
+        .select('role_id')
+        .eq('user_id', userId);
+      
+      console.log('Role assignments for user:', userId, roleAssignments);
+      
+      if (roleError) {
+        console.error('Error fetching role assignments:', roleError);
+        return 'USER';
       }
-    });
-    
-    // Shorter timeout (2 seconds)
-    const timeoutPromise = new Promise<UserRole>((resolve) => {
-      setTimeout(() => {
-        resolve('USER');
-      }, 2000);
-    });
-    
-    // Return whichever resolves first
-    return Promise.race([rolePromise, timeoutPromise]);
-  } catch (error) {
-    console.error('Error in fetchUserRole outer block:', error);
-    return 'USER';
-  }
-};
+      
+      if (!roleAssignments || roleAssignments.length === 0) {
+        console.log('No role assignments found');
+        return 'USER';
+      }
+      
+      // Check if user has admin role (role_id = 2)
+      if (roleAssignments.some(ra => ra.role_id === 2)) {
+        console.log('Found admin role (ID 2)');
+        return 'ADMIN';
+      }
+      
+      // Check if user has broker role (role_id = 3, assuming broker is role 3)
+      if (roleAssignments.some(ra => ra.role_id === 3)) {
+        console.log('Found broker role (ID 3)');
+        return 'BROKER';
+      }
+      
+      // Default to USER
+      console.log('No special role found, defaulting to USER');
+      return 'USER';
+    } catch (error) {
+      console.error('Error in fetchUserRole:', error);
+      return 'USER';
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -134,7 +90,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         
         if (error) {
           if (isMounted) {
-            setLoading(false); // Stop loading on error
+            setLoading(false);
           }
           return;
         }
@@ -145,7 +101,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setSession(null);
             setUser(null);
             setUserRole(null);
-            setLoading(false); // No session, so stop loading immediately
+            setLoading(false);
           }
           return;
         }
@@ -156,9 +112,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setUser(session.user || null);
         }
         
-        // Only fetch role if we have a user
+        // Fetch role if we have a user
         if (session?.user) {
-          // This won't block rendering anymore for non-auth users
           const role = await fetchUserRole(session.user.id);
           
           if (isMounted) {
@@ -173,12 +128,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } catch (e) {
         console.error('Unexpected error in setData:', e);
         if (isMounted) {
-          setLoading(false); // Always ensure loading becomes false
+          setLoading(false);
         }
       }
     };
     
-    // Safety timeout to prevent infinite loading (shorter: 3s)
+    // Safety timeout to prevent infinite loading
     const safetyTimeout = setTimeout(() => {
       if (isMounted && loading) {
         setLoading(false);
