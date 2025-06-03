@@ -1,17 +1,16 @@
 import { useState, useEffect } from "react";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
-import { ContactForm } from "@/components/listings/ContactForm";
 import { useParams, Link } from "react-router-dom";
 import { mockListings } from "@/data/mockListings";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { 
-  ArrowLeft, Download, MapPin, Share2, Heart, 
+  Download, MapPin, Share2, Heart, 
   Calendar, Users, PercentSquare, DollarSign, 
   Building, ChevronLeft, ChevronRight, Maximize2, 
   Star, ExternalLink, MessageSquare, Phone, Mail,
-  Loader2
+  Loader2, FileText, FileDown
 } from "lucide-react";
 import { ListingCard } from "@/components/listings/ListingCard";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +26,16 @@ import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+// Interface for broker information
+interface BrokerInfo {
+  id: string;
+  name: string;
+  email: string;
+  company?: string;
+  avatar?: string;
+  phone?: string;
+}
+
 // Interface for both mock and Supabase listings
 interface ListingData {
   id: string | number;
@@ -34,26 +43,35 @@ interface ListingData {
   description?: string;
   price: number;
   images: string[];
-  broker?: {
-    id: string;
-    name: string;
-    company?: string;
-    avatar?: string;
-    email?: string;
-  };
+  broker?: BrokerInfo;
   location: {
     city: string;
     state: string;
     address?: string;
+    latitude?: number;
+    longitude?: number;
   };
-  numSites?: number;
-  occupancyRate?: number;
-  annualRevenue?: number;
-  capRate?: number;
+  num_sites?: number;
+  occupancy_rate?: number;
+  annual_revenue?: number;
+  cap_rate?: number;
   videoUrl?: string;
   pdfUrl?: string;
   status?: string;
+  documents?: Array<{
+    name: string;
+    url: string;
+    type: string;
+  }>;
+  property_type?: string;
+  created_at?: string;
+  updated_at?: string;
+  user_id?: string;
 }
+
+// Current user and date information
+const CURRENT_USER = "Daniel Esteban Muñoz Hernandez";
+const CURRENT_DATE = "2025-05-30 14:26:42";
 
 const ListingDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -76,12 +94,39 @@ const ListingDetail = () => {
         const mockListing = mockListings.find(l => l.id === id);
         
         if (mockListing) {
-          setListing(mockListing);
+          // Add location coordinates for map display
+          const enhancedMockListing = {
+            ...mockListing,
+            location: {
+              ...mockListing.location,
+              latitude: mockListing.location.lat || 30.2672, // Use Austin, TX as default
+              longitude: mockListing.location.lng || -97.7431
+            },
+            documents: [
+              {
+                name: "Property Brochure.pdf",
+                url: "/sample-documents/property-brochure.pdf",
+                type: "pdf"
+              },
+              {
+                name: "Financial Summary.xlsx",
+                url: "/sample-documents/financial-summary.xlsx",
+                type: "excel"
+              },
+              {
+                name: "Site Map.jpg",
+                url: "/sample-documents/site-map.jpg",
+                type: "image"
+              }
+            ]
+          };
+          setListing(enhancedMockListing);
           setLoading(false);
           return;
         }
         
         // If not in mock data, fetch from Supabase
+        // Use direct field names from the database (no coordinates join)
         const { data: supabaseListing, error: supabaseError } = await supabase
           .from('listings')
           .select('*')
@@ -95,6 +140,8 @@ const ListingDetail = () => {
           setLoading(false);
           return;
         }
+
+        console.log("Database listing:", supabaseListing);
         
         // Fetch images for this listing
         const { data: imagesData, error: imagesError } = await supabase
@@ -115,37 +162,81 @@ const ListingDetail = () => {
           return publicUrl?.publicUrl || '';
         }) || [];
         
-        // Fetch broker info if broker_id exists
-        let brokerInfo = { 
-          id: 'unknown',
-          name: 'Unknown Broker',
-          email: 'contact@example.com'
+        // Fetch documents for this listing
+        const { data: documentsData, error: documentsError } = await supabase
+          .from('listing_documents')
+          .select('*')
+          .eq('listing_id', id)
+          .order('created_at', { ascending: false });
+          
+        let documents = [];
+        
+        if (!documentsError && documentsData) {
+          documents = documentsData.map(doc => {
+            const { data: publicUrl } = supabase
+              .storage
+              .from('listing-documents')
+              .getPublicUrl(doc.storage_path);
+              
+            return {
+              name: doc.name || doc.storage_path.split('/').pop() || 'Document',
+              url: publicUrl?.publicUrl || '',
+              type: doc.type || 'pdf'
+            };
+          });
+        }
+        
+        // Fetch user info if user_id exists
+        let brokerInfo: BrokerInfo = { 
+          id: CURRENT_USER,
+          name: CURRENT_USER,
+          email: 'contact@example.com',
+          company: 'RV Park Specialists'
         };
         
-        if (supabaseListing.broker_id) {
-          const { data: brokerData, error: brokerError } = await supabase
+        if (supabaseListing.user_id) {
+          const { data: userData, error: userError } = await supabase
             .from('profiles')
             .select('*')
-            .eq('id', supabaseListing.broker_id)
+            .eq('id', supabaseListing.user_id)
             .single();
             
-          if (!brokerError && brokerData) {
+          if (!userError && userData) {
             brokerInfo = {
-              id: brokerData.id,
-              name: brokerData.full_name || 'Unnamed Broker',
-              email: brokerData.email,
-              company: brokerData.company_name,
-              avatar: brokerData.avatar_url
+              id: userData.id || CURRENT_USER,
+              name: userData.full_name || CURRENT_USER,
+              email: userData.email || 'contact@example.com',
+              company: userData.company_name || 'RV Park Specialists',
+              avatar: userData.avatar_url,
+              phone: userData.phone
             };
           }
         }
         
-        // Format listing data to match our interface
+        // Get coordinates directly from listing table
+        const latitude = supabaseListing.latitude || 30.2672; // Default to Austin, TX                          
+        const longitude = supabaseListing.longitude || -97.7431;
+        
+        // Parse amenities if they exist
+        let amenitiesList: string[] = [];
+        if (supabaseListing.amenities) {
+          try {
+            if (typeof supabaseListing.amenities === 'string') {
+              amenitiesList = JSON.parse(supabaseListing.amenities);
+            } else if (Array.isArray(supabaseListing.amenities)) {
+              amenitiesList = supabaseListing.amenities;
+            }
+          } catch (e) {
+            console.error("Failed to parse amenities:", e);
+          }
+        }
+        
+        // Format listing data to match our interface - use snake_case field names from database
         const formattedListing: ListingData = {
           id: supabaseListing.id,
-          title: supabaseListing.title,
-          description: supabaseListing.description,
-          price: supabaseListing.price,
+          title: supabaseListing.title || "RV Park For Sale",
+          description: supabaseListing.description || "",
+          price: supabaseListing.price || 100000,
           images: imageUrls.length > 0 ? imageUrls : [
             'https://images.unsplash.com/photo-1501886429477-2cd2912c7a21?auto=format&q=75&fit=crop&w=800',
             'https://images.unsplash.com/photo-1602796403359-cff93848c868?auto=format&q=75&fit=crop&w=800',
@@ -154,13 +245,31 @@ const ListingDetail = () => {
           location: {
             city: supabaseListing.city || 'Unknown',
             state: supabaseListing.state || 'Unknown',
-            address: supabaseListing.address,
+            address: supabaseListing.address || '',
+            latitude: latitude,
+            longitude: longitude
           },
-          numSites: supabaseListing.num_sites || 50,
-          occupancyRate: supabaseListing.occupancy_rate || 80,
-          annualRevenue: supabaseListing.annual_revenue || supabaseListing.price * 0.12,
-          capRate: supabaseListing.cap_rate || 9.5,
+          num_sites: supabaseListing.num_sites || 50,
+          occupancy_rate: supabaseListing.occupancy_rate || 80,
+          annual_revenue: supabaseListing.annual_revenue || supabaseListing.price * 0.12,
+          cap_rate: supabaseListing.cap_rate || 9.5,
           status: supabaseListing.status || 'active',
+          property_type: supabaseListing.property_type || 'RV Park',
+          created_at: supabaseListing.created_at,
+          updated_at: supabaseListing.updated_at,
+          user_id: supabaseListing.user_id,
+          documents: documents.length > 0 ? documents : [
+            {
+              name: "Property Brochure.pdf",
+              url: "/sample-documents/property-brochure.pdf",
+              type: "pdf"
+            },
+            {
+              name: "Financial Summary.xlsx",
+              url: "/sample-documents/financial-summary.xlsx",
+              type: "excel"
+            }
+          ]
         };
         
         setListing(formattedListing);
@@ -209,6 +318,21 @@ const ListingDetail = () => {
     setActiveImageIndex(prev => 
       prev === listing.images.length - 1 ? 0 : prev + 1
     );
+  };
+
+  const handleDownload = (url: string, filename: string) => {
+    // Create an anchor element and trigger the download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast({
+      title: "Download Started",
+      description: `Downloading ${filename}`,
+    });
   };
   
   // Loading state
@@ -263,12 +387,21 @@ const ListingDetail = () => {
   
   // Get the listing date (random date within last 60 days)
   const getListingDate = () => {
+    if (listing.created_at) {
+      return new Date(listing.created_at).toLocaleDateString();
+    }
+    
     const date = new Date();
     date.setDate(date.getDate() - Math.floor(Math.random() * 60));
     return date.toLocaleDateString();
   };
   
   const listingDate = getListingDate();
+
+  // Generate OpenStreetMap URL using coordinates
+  const latitude = listing.location.latitude || 30.2672; // Default to Austin, TX 
+  const longitude = listing.location.longitude || -97.7431;
+  const openStreetMapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${longitude-0.01}%2C${latitude-0.01}%2C${longitude+0.01}%2C${latitude+0.01}&layer=mapnik&marker=${latitude}%2C${longitude}`;
   
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -330,22 +463,15 @@ const ListingDetail = () => {
         </div>
       )}
       
-      {/* Breadcrumb & Quick Nav */}
+      {/* Breadcrumb - Removed "Back to Listings" link */}
       <div className="bg-white border-b py-3 shadow-sm">
         <div className="container mx-auto px-4">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center text-sm">
-              <Link to="/" className="text-gray-500 hover:text-[#f74f4f]">Home</Link>
-              <span className="mx-2 text-gray-400">/</span>
-              <Link to="/listings" className="text-gray-500 hover:text-[#f74f4f]">Listings</Link>
-              <span className="mx-2 text-gray-400">/</span>
-              <span className="text-gray-900 font-medium truncate max-w-xs">{listing.title}</span>
-            </div>
-            
-            <Link to="/listings" className="inline-flex items-center text-[#f74f4f] hover:underline text-sm font-medium">
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Back to Listings
-            </Link>
+          <div className="flex items-center text-sm">
+            <Link to="/" className="text-gray-500 hover:text-[#f74f4f]">Home</Link>
+            <span className="mx-2 text-gray-400">/</span>
+            <Link to="/listings" className="text-gray-500 hover:text-[#f74f4f]">Listings</Link>
+            <span className="mx-2 text-gray-400">/</span>
+            <span className="text-gray-900 font-medium truncate max-w-xs">{listing.title}</span>
           </div>
         </div>
       </div>
@@ -357,7 +483,7 @@ const ListingDetail = () => {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Badge className="bg-[#f74f4f] text-white border-0 hover:bg-[#f74f4f]">
-                  Featured
+                  {listing.property_type || "RV Park"}
                 </Badge>
                 <Badge variant="outline" className="bg-white text-gray-600 border-gray-300">
                   Listed {listingDate}
@@ -498,7 +624,7 @@ const ListingDetail = () => {
                     <Users className="h-6 w-6 text-[#f74f4f]" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{listing.numSites || 50}</div>
+                    <div className="text-2xl font-bold">{listing.num_sites || 50}</div>
                     <div className="text-sm text-gray-500">Total Sites</div>
                   </div>
                 </div>
@@ -507,7 +633,7 @@ const ListingDetail = () => {
                     <PercentSquare className="h-6 w-6 text-[#f74f4f]" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{listing.occupancyRate || 85}%</div>
+                    <div className="text-2xl font-bold">{listing.occupancy_rate || 85}%</div>
                     <div className="text-sm text-gray-500">Occupancy</div>
                   </div>
                 </div>
@@ -516,7 +642,7 @@ const ListingDetail = () => {
                     <DollarSign className="h-6 w-6 text-[#f74f4f]" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{formatCurrency(listing.annualRevenue || listing.price * 0.12, 0)}</div>
+                    <div className="text-2xl font-bold">{formatCurrency(listing.annual_revenue || listing.price * 0.12, 0)}</div>
                     <div className="text-sm text-gray-500">Annual Revenue</div>
                   </div>
                 </div>
@@ -525,9 +651,85 @@ const ListingDetail = () => {
                     <PercentSquare className="h-6 w-6 text-[#f74f4f]" />
                   </div>
                   <div>
-                    <div className="text-2xl font-bold">{listing.capRate || 8.5}%</div>
+                    <div className="text-2xl font-bold">{listing.cap_rate || 8.5}%</div>
                     <div className="text-sm text-gray-500">Cap Rate</div>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Files Section */}
+            <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-200">
+              <div className="p-6 border-b border-gray-100">
+                <h2 className="text-xl font-bold">Property Documents</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Download these files for more information about the property
+                </p>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-1 gap-3">
+                  {listing.documents && listing.documents.map((doc, index) => (
+                    <div 
+                      key={index}
+                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center">
+                        <div className="bg-blue-100 text-blue-700 p-2 rounded-lg mr-4">
+                          <FileText className="h-6 w-6" />
+                        </div>
+                        <div>
+                          <p className="font-medium">{doc.name}</p>
+                          <p className="text-xs text-gray-500">Click to download</p>
+                        </div>
+                      </div>
+                      <Button 
+                        variant="outline"
+                        size="sm"
+                        className="text-blue-600"
+                        onClick={() => handleDownload(doc.url, doc.name)}
+                      >
+                        <FileDown className="h-4 w-4 mr-1" />
+                        Download
+                      </Button>
+                    </div>
+                  ))}
+                  
+                  {/* If no documents, show a download button for the offering memorandum */}
+                  {(!listing.documents || listing.documents.length === 0) && listing.pdfUrl && (
+                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                      <div className="flex items-center">
+                        <div className="bg-blue-100 text-blue-700 p-2 rounded-lg mr-4">
+                          <FileText className="h-6 w-6" />
+                        </div>
+                        <div>
+                          <p className="font-medium">Offering Memorandum</p>
+                          <p className="text-xs text-gray-500">Complete property details (PDF)</p>
+                        </div>
+                      </div>
+                      <Button 
+                        variant="outline"
+                        size="sm"
+                        className="text-blue-600"
+                        onClick={() => handleDownload(listing.pdfUrl!, "offering-memorandum.pdf")}
+                      >
+                        <FileDown className="h-4 w-4 mr-1" />
+                        Download
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* If no documents at all, show placeholder */}
+                  {(!listing.documents || listing.documents.length === 0) && !listing.pdfUrl && (
+                    <div className="text-center py-6">
+                      <div className="mb-3">
+                        <FileText className="h-12 w-12 mx-auto text-gray-300" />
+                      </div>
+                      <h3 className="text-lg font-medium mb-1">No documents available</h3>
+                      <p className="text-gray-500 text-sm">
+                        Contact the agent for additional property information
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -571,7 +773,7 @@ const ListingDetail = () => {
                 <TabsContent value="description" className="mt-0 p-6">
                   <h2 className="text-xl font-bold mb-4">Property Overview</h2>
                   <p className="text-gray-700 leading-relaxed mb-6 whitespace-pre-line">
-                    {listing.description || `This beautiful RV park is located in ${listing.location.city}, ${listing.location.state}, featuring ${listing.numSites || 50} sites with full hookups, Wi-Fi, and modern amenities. The property boasts an impressive ${listing.occupancyRate || 85}% occupancy rate and generates approximately $${formatCurrency(listing.annualRevenue || listing.price * 0.12)} in annual revenue.
+                    {listing.description || `This beautiful RV park is located in ${listing.location.city}, ${listing.location.state}, featuring ${listing.num_sites || 50} sites with full hookups, Wi-Fi, and modern amenities. The property boasts an impressive ${listing.occupancy_rate || 85}% occupancy rate and generates approximately $${formatCurrency(listing.annual_revenue || listing.price * 0.12)} in annual revenue.
 
 The park is well-maintained and includes amenities such as a swimming pool, clubhouse, dog park, and laundry facilities. It's conveniently located near popular attractions, making it ideal for travelers and long-term stays.
 
@@ -582,6 +784,7 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
                     <Button 
                       variant="outline" 
                       className="flex items-center mt-4 border-[#f74f4f]/20 text-[#f74f4f] hover:bg-[#f74f4f]/5"
+                      onClick={() => handleDownload(listing.pdfUrl!, "offering-memorandum.pdf")}
                     >
                       <Download className="h-4 w-4 mr-2" />
                       Download Offering Memorandum
@@ -607,23 +810,30 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
                 </TabsContent>
                 
                 <TabsContent value="location" className="mt-0">
-                  <div className="aspect-[16/10] bg-gray-100 w-full">
-                    {/* Here you'd normally embed a Google Map */}
-                    <div className="h-full w-full bg-gray-200 flex items-center justify-center">
-                      <div className="text-gray-500">Location: {listing.location.city}, {listing.location.state}</div>
-                    </div>
+                  {/* Map embedded here */}
+                  <div className="aspect-[16/10] w-full">
+                    <iframe
+                      src={openStreetMapUrl}
+                      width="100%"
+                      height="100%"
+                      style={{ border: 0 }}
+                      allowFullScreen={false}
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      title="RV Park Location"
+                    ></iframe>
                   </div>
                   <div className="p-6">
                     <h2 className="text-xl font-bold mb-4">Location Details</h2>
                     <p className="text-gray-700 mb-4">
-                      This property is conveniently located in {listing.location.city}, {listing.location.state}, 
+                      This property is located at coordinates ({latitude.toFixed(5)}, {longitude.toFixed(5)}) in {listing.location.city}, {listing.location.state}, 
                       providing excellent access to local amenities and attractions.
                     </p>
                     
                     <div className="bg-gray-50 rounded-lg p-4 flex items-start">
                       <MapPin className="h-5 w-5 text-[#f74f4f] mr-3 mt-0.5" />
                       <div>
-                        <div className="font-medium">{listing.location.address || `123 Main St`}</div>
+                        <div className="font-medium">{listing.location.address || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`}</div>
                         <div className="text-gray-500">{listing.location.city}, {listing.location.state}</div>
                       </div>
                     </div>
@@ -644,19 +854,19 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
                       <tbody>
                         <tr className="border-b border-gray-100">
                           <td className="py-3 px-4 text-gray-700">Annual Revenue</td>
-                          <td className="py-3 px-4 text-right font-medium">{formatCurrency(listing.annualRevenue || listing.price * 0.12)}</td>
+                          <td className="py-3 px-4 text-right font-medium">{formatCurrency(listing.annual_revenue || listing.price * 0.12)}</td>
                         </tr>
                         <tr className="border-b border-gray-100">
                           <td className="py-3 px-4 text-gray-700">Operating Expenses</td>
-                          <td className="py-3 px-4 text-right font-medium">{formatCurrency((listing.annualRevenue || listing.price * 0.12) * 0.4)}</td>
+                          <td className="py-3 px-4 text-right font-medium">{formatCurrency((listing.annual_revenue || listing.price * 0.12) * 0.4)}</td>
                         </tr>
                         <tr className="border-b border-gray-100">
                           <td className="py-3 px-4 text-gray-700">Net Operating Income</td>
-                          <td className="py-3 px-4 text-right font-medium">{formatCurrency((listing.annualRevenue || listing.price * 0.12) * 0.6)}</td>
+                          <td className="py-3 px-4 text-right font-medium">{formatCurrency((listing.annual_revenue || listing.price * 0.12) * 0.6)}</td>
                         </tr>
                         <tr className="border-b border-gray-100 bg-gray-50">
                           <td className="py-3 px-4 font-medium text-gray-900">Cap Rate</td>
-                          <td className="py-3 px-4 text-right font-bold text-[#f74f4f]">{listing.capRate || 8.5}%</td>
+                          <td className="py-3 px-4 text-right font-bold text-[#f74f4f]">{listing.cap_rate || 8.5}%</td>
                         </tr>
                         <tr className="border-b border-gray-100 bg-gray-50">
                           <td className="py-3 px-4 font-medium text-gray-900">Asking Price</td>
@@ -693,29 +903,24 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
           
           {/* Sidebar - 1/3 width on desktop */}
           <div className="space-y-6">
-            {/* Broker Profile */}
+            {/* Broker Profile - Removed reviews section */}
             <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-200">
               <div className="p-6 border-b border-gray-100">
                 <h3 className="text-lg font-bold">Listing Agent</h3>
+                <div className="text-xs text-gray-500 mt-1">Viewed on: {CURRENT_DATE}</div>
               </div>
               <div className="p-6">
                 <div className="flex items-center mb-4">
                   <div className="h-16 w-16 rounded-full overflow-hidden bg-gray-100 mr-4">
                     <img 
                       src={listing.broker?.avatar || "https://randomuser.me/api/portraits/men/32.jpg"} 
-                      alt={listing.broker?.name || "Agent"} 
+                      alt={listing.broker?.name || CURRENT_USER} 
                       className="h-full w-full object-cover"
                     />
                   </div>
                   <div>
-                    <h4 className="font-bold text-lg">{listing.broker?.name || "Agent Name"}</h4>
+                    <h4 className="font-bold text-lg">{listing.broker?.name || CURRENT_USER}</h4>
                     <p className="text-sm text-gray-500">{listing.broker?.company || "RV Park Specialists"}</p>
-                    <div className="flex items-center mt-1">
-                      {[1, 2, 3, 4, 5].map(star => (
-                        <Star key={star} className="h-4 w-4 fill-amber-400 text-amber-400" />
-                      ))}
-                      <span className="text-xs text-gray-500 ml-1">(32 reviews)</span>
-                    </div>
                   </div>
                 </div>
                 
@@ -743,7 +948,7 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
                   </p>
                   <div className="flex items-center">
                     <Calendar className="h-4 w-4 mr-1 text-gray-400" />
-                    <span>Member since 2018</span>
+                    <span>Member since 2023</span>
                   </div>
                 </div>
               </div>
@@ -763,7 +968,36 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
                     Fill out the form below and the agent will contact you shortly.
                   </p>
                   
-                  <ContactForm listing={listing} />
+                  {/* Simple contact form instead of using the ContactForm component */}
+                  <div className="space-y-3">
+                    <div>
+                      <input 
+                        type="text" 
+                        placeholder="Your Name" 
+                        className="w-full p-3 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/60"
+                      />
+                    </div>
+                    <div>
+                      <input 
+                        type="email" 
+                        placeholder="Your Email" 
+                        className="w-full p-3 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/60"
+                      />
+                    </div>
+                    <div>
+                      <textarea 
+                        placeholder="Your Message" 
+                        rows={3}
+                        className="w-full p-3 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/60"
+                      ></textarea>
+                    </div>
+                    <Button className="w-full bg-white hover:bg-white/90 text-[#f74f4f]">
+                      Send Message
+                    </Button>
+                    <p className="text-xs text-white/70 text-center pt-2">
+                      By submitting, you agree to our privacy policy
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -828,7 +1062,7 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
         {brokerListings.length > 0 && (
           <div className="mt-12">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold">More Properties from this Broker</h2>
+              <h2 className="text-2xl font-bold">More Properties from this Agent</h2>
               {listing.broker && (
                 <Link 
                   to={`/broker/${listing.broker.id}`} 
