@@ -166,6 +166,10 @@ export type Database = {
         Args: { user_id_param: string; role_id_param: number }
         Returns: boolean
       }
+      get_user_role: {
+        Args: { user_id_param: string }
+        Returns: string
+      }
       is_admin: {
         Args: { user_id_param: string }
         Returns: boolean

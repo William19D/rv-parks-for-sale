@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -17,18 +18,28 @@ const Login = () => {
   const { toast } = useToast();
   const { user, userRole, signIn } = useAuth();
 
-  // Verificamos cuando cambia userRole para hacer la redirección correctamente
+  // Handle redirect after successful login
   useEffect(() => {
     console.log("Login effect - User:", user?.id, "Role:", userRole);
     
     if (user && userRole) {
-      // Importante: Usar un pequeño timeout para asegurar que la redirección 
-      // ocurra después de que se actualice el estado de autenticación
-      setTimeout(() => {
-        const from = location.state?.from?.pathname || (userRole === 'ADMIN' ? '/admin/dashboard' : '/');
-        console.log(`Redirecting user with role ${userRole} to: ${from}`);
-        navigate(from, { replace: true });
-      }, 100);
+      const from = location.state?.from?.pathname;
+      let redirectTo = '/';
+      
+      // If user is admin, redirect to admin dashboard
+      if (userRole === 'ADMIN') {
+        redirectTo = '/admin/dashboard';
+        console.log('Redirecting admin user to admin dashboard');
+      } else if (from && !from.startsWith('/admin')) {
+        // For non-admin users, redirect to where they came from (unless it's admin route)
+        redirectTo = from;
+        console.log(`Redirecting user to original destination: ${from}`);
+      } else {
+        console.log('Redirecting user to home page');
+      }
+      
+      console.log(`Final redirect destination: ${redirectTo}`);
+      navigate(redirectTo, { replace: true });
     }
   }, [user, userRole, navigate, location.state]);
 
@@ -80,11 +91,12 @@ const Login = () => {
         return;
       }
       
-      // La redirección se manejará en el useEffect
       toast({
         title: "Welcome!",
         description: "You have successfully signed in",
       });
+      
+      // The redirection will be handled by the useEffect above
       
     } catch (error: any) {
       console.error('Login error:', error);
