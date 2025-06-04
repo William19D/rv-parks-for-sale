@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
+import { Loader2 } from "lucide-react";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -15,26 +16,16 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const { user, userRole, signIn } = useAuth();
+  const { signIn } = useAuth();
   
-  // Efecto para redirigir si ya está autenticado
-  useEffect(() => {
-    if (user) {
-      const from = location.state?.from?.pathname || 
-                  (userRole === 'ADMIN' ? '/admin/dashboard' : '/');
-      
-      navigate(from, { replace: true });
-    }
-  }, [user, userRole, navigate, location]);
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validaciones
+    // Validations
     if (!email) {
       toast({
-        title: "Campo requerido",
-        description: "Por favor ingrese su correo electrónico",
+        title: "Required field",
+        description: "Please enter your email address",
         variant: "destructive",
       });
       return;
@@ -42,8 +33,8 @@ const Login = () => {
     
     if (!email.includes('@')) {
       toast({
-        title: "Correo inválido",
-        description: "Por favor ingrese un correo electrónico válido",
+        title: "Invalid email",
+        description: "Please enter a valid email address",
         variant: "destructive",
       });
       return;
@@ -51,8 +42,8 @@ const Login = () => {
     
     if (!password) {
       toast({
-        title: "Campo requerido",
-        description: "Por favor ingrese su contraseña",
+        title: "Required field",
+        description: "Please enter your password",
         variant: "destructive",
       });
       return;
@@ -61,35 +52,35 @@ const Login = () => {
     setLoading(true);
 
     try {
-      console.log(`[Login] Intentando iniciar sesión con: ${email}`);
+      console.log(`[Login] Attempting to sign in with: ${email}`);
       
-      // Usar la función signIn del hook useAuth
+      // Use the signIn function from useAuth
       const { error } = await signIn(email, password);
 
       if (error) {
-        console.error('[Login] Error de autenticación:', error);
+        console.error('[Login] Authentication error:', error);
         toast({
-          title: "Error de inicio de sesión",
-          description: error.message || "Credenciales incorrectas",
+          title: "Login error",
+          description: error.message || "Incorrect credentials",
           variant: "destructive",
         });
         setLoading(false);
         return;
       }
       
-      // Si llegamos aquí, la autenticación fue exitosa.
-      // El hook useAuth ya actualizó el estado y la redirección
-      // se manejará en el useEffect arriba.
+      // Redirection will be handled automatically by useAuth hook and App.tsx
+      // based on the user's role (admin or not)
       
       toast({
-        title: "Bienvenido",
-        description: "Has iniciado sesión correctamente",
+        title: "Welcome",
+        description: "You have successfully logged in",
       });
+      
     } catch (error: any) {
-      console.error('[Login] Error inesperado:', error);
+      console.error('[Login] Unexpected error:', error);
       toast({
         title: "Error",
-        description: "Ocurrió un error inesperado",
+        description: "An unexpected error occurred",
         variant: "destructive",
       });
     } finally {
@@ -105,30 +96,30 @@ const Login = () => {
       <div className="flex-grow flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl font-bold">Iniciar sesión</CardTitle>
+            <CardTitle className="text-2xl font-bold">Sign in</CardTitle>
             <CardDescription>
-              Ingrese sus credenciales para acceder a su cuenta
+              Enter your credentials to access your account
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4" noValidate>
               <div>
-                <Label htmlFor="email">Correo electrónico</Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   type="email"
-                  placeholder="correo@ejemplo.com"
+                  placeholder="email@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
                 />
               </div>
               <div>
-                <Label htmlFor="password">Contraseña</Label>
+                <Label htmlFor="password">Password</Label>
                 <Input
                   id="password"
                   type="password"
-                  placeholder="Su contraseña"
+                  placeholder="Your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
@@ -137,7 +128,7 @@ const Login = () => {
               <div className="flex justify-between items-center">
                 <div className="text-sm">
                   <Link to="/forgot-password" className="text-[#f74f4f] hover:text-[#e43c3c] font-medium">
-                    ¿Olvidó su contraseña?
+                    Forgot your password?
                   </Link>
                 </div>
               </div>
@@ -146,17 +137,22 @@ const Login = () => {
                 className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]"
                 disabled={loading}
               >
-                {loading ? "Iniciando sesión..." : "Iniciar sesión"}
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing in...
+                  </>
+                ) : "Sign in"}
               </Button>
             </form>
             <div className="mt-4 text-center">
               <p className="text-sm text-gray-600">
-                ¿No tiene una cuenta?{" "}
+                Don't have an account?{" "}
                 <Link 
                   to="/register" 
                   className="text-[#f74f4f] hover:text-[#e43c3c] font-medium"
                 >
-                  Regístrese aquí
+                  Register here
                 </Link>
               </p>
             </div>

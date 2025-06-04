@@ -7,7 +7,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { 
   Tabs, 
-  TabsContent, 
   TabsList, 
   TabsTrigger 
 } from '@/components/ui/tabs';
@@ -40,7 +39,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { 
   Search, 
-  ChevronDown, 
   Filter, 
   CheckCircle, 
   XCircle, 
@@ -50,7 +48,7 @@ import {
   Eye,
   Trash,
   AlertCircle,
-  UserCircle
+  RefreshCw
 } from 'lucide-react';
 
 // Status type for listings
@@ -95,116 +93,127 @@ const AdminDashboard = () => {
     rejected: 0
   });
   
-  const { user, userRole } = useAuth();
-  const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Admin';
-  
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Fetch all listings from Supabase
-  useEffect(() => {
-    const fetchAllListings = async () => {
-      setIsLoading(true);
-      
-      try {
-        console.log('[Admin] Fetching all listings from Supabase...');
-        
-        const { data, error } = await supabase
-          .from('listings')
-          .select('*')
-          .order('created_at', { ascending: false });
-        
-        if (error) {
-          console.error('[Admin] Error fetching listings:', error);
-          toast({
-            title: "Error",
-            description: "Failed to fetch listings from database",
-            variant: "destructive",
-          });
-          return;
-        }
-        
-        console.log(`[Admin] Successfully fetched ${data?.length || 0} listings`);
-        
-        if (data) {
-          // Map the data to our interface
-          const mappedListings: Listing[] = data.map(item => ({
-            id: item.id.toString(),
-            title: item.title || 'Untitled',
-            price: item.price || 0,
-            status: item.status || 'pending',
-            created_at: item.created_at,
-            rejection_reason: item.rejection_reason,
-            city: item.city || 'Unknown',
-            state: item.state || 'Unknown',
-            property_type: item.property_type || 'RV Park',
-            user_id: item.user_id
-          }));
-          
-          // Update listings and counts
-          setListings(mappedListings);
-          updateStatusCounts(mappedListings);
-          
-          console.log('[Admin] Listings by status:', {
-            total: mappedListings.length,
-            pending: mappedListings.filter(l => l.status === 'pending').length,
-            approved: mappedListings.filter(l => l.status === 'approved').length,
-            rejected: mappedListings.filter(l => l.status === 'rejected').length
-          });
-        }
-      } catch (error) {
-        console.error('[Admin] Error in fetchAllListings:', error);
-        toast({
-          title: "Error",
-          description: "An unexpected error occurred while fetching listings",
-          variant: "destructive",
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  // Fetch listings from Supabase
+  const fetchListings = async () => {
+    setIsLoading(true);
     
-    fetchAllListings();
-  }, [toast]);
-
-  // Update status counts
-  const updateStatusCounts = (listingsData: Listing[]) => {
-    const counts = {
-      all: listingsData.length,
-      pending: listingsData.filter(l => l.status === 'pending').length,
-      approved: listingsData.filter(l => l.status === 'approved').length,
-      rejected: listingsData.filter(l => l.status === 'rejected').length
-    };
-    setStatusCounts(counts);
+    try {
+      console.log('[Admin] Fetching listings from Supabase...');
+      
+      // Consulta básica para obtener todos los listados sin filtros adicionales
+      let query = supabase
+        .from('listings')
+        .select('*');
+      
+      // Solo aplicar filtro si no es "all"
+      if (activeTab !== 'all') {
+        query = query.eq('status', activeTab);
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error('[Admin] Error fetching listings:', error);
+        throw error;
+      }
+      
+      console.log(`[Admin] Successfully fetched ${data?.length || 0} listings`);
+      
+      if (!data || data.length === 0) {
+        setListings([]);
+        setFilteredListings([]);
+        setStatusCounts({
+          all: 0,
+          pending: 0,
+          approved: 0,
+          rejected: 0
+        });
+        return;
+      }
+      
+      // Transform data to match our interface
+      const processedListings: Listing[] = data.map(item => ({
+        id: String(item.id),
+        title: item.title || 'Untitled',
+        price: Number(item.price) || 0,
+        status: item.status || 'pending',
+        created_at: item.created_at || new Date().toISOString(),
+        rejection_reason: item.rejection_reason,
+        city: item.city || 'Unknown',
+        state: item.state || 'Unknown',
+        property_type: item.property_type || 'RV Park',
+        user_id: item.user_id
+      }));
+      
+      // Update state
+      setListings(processedListings);
+      
+      // Filter based on active tab
+      const filtered = activeTab === 'all'
+        ? processedListings
+        : processedListings.filter(listing => listing.status === activeTab);
+      
+      setFilteredListings(filtered);
+      
+      // Update counts
+      setStatusCounts({
+        all: processedListings.length,
+        pending: processedListings.filter(l => l.status === 'pending').length,
+        approved: processedListings.filter(l => l.status === 'approved').length,
+        rejected: processedListings.filter(l => l.status === 'rejected').length
+      });
+      
+    } catch (error) {
+      console.error('[Admin] Error in fetchListings:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch listings from database",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // Filter listings based on active tab and search query
+  // Load listings when component mounts or tab changes
   useEffect(() => {
-    let filtered = listings;
-    
-    // Filter by status tab
-    if (activeTab !== 'all') {
-      filtered = filtered.filter(listing => listing.status === activeTab);
+    fetchListings();
+  }, [activeTab]);
+
+  // Filter listings based on search query
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      if (activeTab === 'all') {
+        setFilteredListings(listings);
+      } else {
+        setFilteredListings(listings.filter(listing => listing.status === activeTab));
+      }
+      return;
     }
     
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter(listing => 
-        listing.title?.toLowerCase().includes(query) ||
-        listing.city?.toLowerCase().includes(query) ||
-        listing.state?.toLowerCase().includes(query) ||
-        listing.property_type?.toLowerCase().includes(query)
-      );
-    }
+    const query = searchQuery.toLowerCase().trim();
     
-    setFilteredListings(filtered);
-    console.log(`[Admin] Filtered listings: ${filtered.length} (tab: ${activeTab}, search: "${searchQuery}")`);
-  }, [listings, activeTab, searchQuery]);
+    // Start with listings filtered by tab
+    const tabFilteredListings = activeTab === 'all'
+      ? listings
+      : listings.filter(listing => listing.status === activeTab);
+    
+    // Then filter by search query
+    const searchFilteredListings = tabFilteredListings.filter(listing => 
+      listing.title?.toLowerCase().includes(query) ||
+      listing.city?.toLowerCase().includes(query) ||
+      listing.state?.toLowerCase().includes(query) ||
+      listing.property_type?.toLowerCase().includes(query)
+    );
+    
+    setFilteredListings(searchFilteredListings);
+  }, [searchQuery, listings, activeTab]);
 
   // Handle tab change
   const handleTabChange = (value: string) => {
-    console.log(`[Admin] Tab changed to: ${value}`);
     setActiveTab(value as ListingStatus);
   };
 
@@ -243,24 +252,13 @@ const AdminDashboard = () => {
       
       if (error) throw error;
       
-      // Update local state
-      const updatedListings = listings.map(listing => 
-        listing.id === selectedListing.id 
-          ? { 
-              ...listing, 
-              status: 'rejected',
-              rejection_reason: rejectionReason.trim() || 'No reason provided'
-            } 
-          : listing
-      );
-      
-      setListings(updatedListings);
-      updateStatusCounts(updatedListings);
-      
       toast({
         title: "Listing Rejected",
         description: "Listing has been rejected with reason provided",
       });
+      
+      // Reload listings to get updated data
+      fetchListings();
     } catch (error) {
       console.error('Error rejecting listing:', error);
       toast({
@@ -290,24 +288,13 @@ const AdminDashboard = () => {
       
       if (error) throw error;
       
-      // Update local state
-      const updatedListings = listings.map(listing => 
-        listing.id === selectedListing.id 
-          ? { 
-              ...listing, 
-              status: newStatus,
-              ...(newStatus === 'approved' && { rejection_reason: undefined })
-            }
-          : listing
-      );
-      
-      setListings(updatedListings);
-      updateStatusCounts(updatedListings);
-      
       toast({
         title: "Status Updated",
-        description: `Listing has been ${newStatus}`,
+        description: `Listing status changed to ${newStatus}`,
       });
+      
+      // Reload listings to get updated data
+      fetchListings();
     } catch (error) {
       console.error('Error updating status:', error);
       toast({
@@ -332,15 +319,13 @@ const AdminDashboard = () => {
       
       if (error) throw error;
       
-      // Update local state
-      const updatedListings = listings.filter(listing => listing.id !== selectedListing.id);
-      setListings(updatedListings);
-      updateStatusCounts(updatedListings);
-      
       toast({
         title: "Listing Deleted",
         description: "The listing has been permanently deleted",
       });
+      
+      // Reload listings to get updated data
+      fetchListings();
     } catch (error) {
       console.error('Error deleting listing:', error);
       toast({
@@ -380,25 +365,24 @@ const AdminDashboard = () => {
 
   return (
     <div className="flex-1 p-6">
-      {/* Header con información del usuario */}
-      <div className="flex justify-between items-center mb-6 bg-white rounded-lg shadow p-4">
-        <div className="flex items-center">
-          <UserCircle className="h-6 w-6 mr-2 text-[#f74f4f]" />
-          <div>
-            <h2 className="text-sm font-semibold text-gray-600">Admin User:</h2>
-            <p className="text-gray-800 font-medium">{userName}</p>
-          </div>
-        </div>
-      </div>
-      
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-        <Button 
-          onClick={() => navigate('/admin/listings/new')}
-          className="bg-[#f74f4f] hover:bg-[#e43c3c]"
-        >
-          Add New Listing
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline"
+            onClick={fetchListings}
+            className="flex items-center gap-1"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh Data
+          </Button>
+          <Button 
+            onClick={() => navigate('/admin/listings/new')}
+            className="bg-[#f74f4f] hover:bg-[#e43c3c]"
+          >
+            Add New Listing
+          </Button>
+        </div>
       </div>
 
       {/* Dashboard Stats */}

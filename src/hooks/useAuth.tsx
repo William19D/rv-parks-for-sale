@@ -34,186 +34,75 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userRole, setUserRole] = useState<UserRole>(null);
   const { toast } = useToast();
 
-  // Verificar si un email existe en la tabla admins (solo comprueba existencia)
-  const checkAdminEmail = async (email: string) => {
-    try {
-      console.log(`[Auth] Verificando si ${email} existe en tabla admins`);
-      const { data, error } = await supabase
-        .from('admins') // CORREGIDO: Usar 'admins' en plural
-        .select('*')
-        .eq('email', email.toLowerCase())
-        .single();
-      
-      if (error) {
-        console.log(`[Auth] Email no encontrado en tabla admins:`, error.message);
-        return null;
-      }
-      
-      console.log(`[Auth] Admin encontrado:`, data);
-      return data;
-    } catch (error) {
-      console.error(`[Auth] Error verificando admin:`, error);
-      return null;
-    }
-  };
-  
-  // Autenticar usuario como admin - Versión simplificada y mejorada
-  const authenticateAdmin = async (email: string, password: string) => {
-    try {
-      console.log(`[Auth] Autenticando admin con email: ${email}`);
-      
-      // IMPORTANTE: Limpiar cualquier bypass previo
-      localStorage.removeItem('bypassAuth');
-      
-      // VERIFICAR PRIMERO LA EXISTENCIA DEL EMAIL
-      const { data: adminExists, error: existsError } = await supabase
-        .from('admins') // CORREGIDO: Usar 'admins' en plural
-        .select('*')
-        .eq('email', email.toLowerCase())
-        .single();
-      
-      if (existsError || !adminExists) {
-        console.log(`[Auth] Admin no encontrado:`, existsError?.message || 'No existe');
-        return { error: new Error('Email no registrado como administrador'), data: null };
-      }
-      
-      // AHORA VERIFICAR LA CONTRASEÑA
-      if (adminExists.password !== password) {
-        console.log(`[Auth] Contraseña incorrecta para admin`);
-        return { error: new Error('Contraseña incorrecta'), data: null };
-      }
-      
-      // Autenticación correcta
-      console.log(`[Auth] Admin autenticado correctamente:`, adminExists);
-      
-      // Crear un objeto "user" para mantener compatibilidad con la interfaz
-      const adminUser = {
-        id: adminExists.id,
-        email: adminExists.email,
-        user_metadata: { name: adminExists.name || 'Admin' },
-        app_metadata: { role: 'ADMIN' },
-      } as unknown as User;
-      
-      // Guardar datos en localStorage para persistencia
-      localStorage.setItem('adminUser', JSON.stringify({
-        id: adminExists.id,
-        email: adminExists.email,
-        name: adminExists.name || 'Admin'
-      }));
-      localStorage.setItem('userRole', 'ADMIN');
-      
-      return { error: null, data: adminUser };
-    } catch (error) {
-      console.error(`[Auth] Error en authenticateAdmin:`, error);
-      return { error, data: null };
-    }
-  };
-  
-  // Obtener rol de usuario normal
-  const fetchUserRole = async (userId: string): Promise<UserRole> => {
-    if (!userId) return null;
+  // Use a simple SQL RPC function to check if an admin exists by email
+  // This avoids the issue with direct table queries
+  const checkIfAdminByEmail = async (email: string): Promise<boolean> => {
+    if (!email) return false;
     
     try {
-      console.log(`[Auth] Obteniendo rol para usuario: ${userId}`);
-      
-      // Verificar roles en tabla user_role_assignments
-      const { data: roleAssignments, error } = await supabase
-        .from('user_role_assignments')
-        .select('role_id')
-        .eq('user_id', userId);
+      // Using a direct stored procedure/function call
+      const { data, error } = await supabase.rpc('is_admin_by_email', { 
+        admin_email: email.toLowerCase() 
+      });
       
       if (error) {
-        console.error('[Auth] Error obteniendo asignaciones de rol:', error);
-        return 'USER';
+        console.error('[Auth] RPC error checking admin status:', error);
+        
+        // Fallback to raw SQL query as direct access
+        // Using count to avoid schema issues
+        const { count, error: countError } = await supabase
+          .from('admins')
+          .select('*', { count: 'exact', head: true })
+          .eq('email', email.toLowerCase());
+        
+        if (countError) {
+          console.error('[Auth] Fallback admin check failed:', countError);
+          return false;
+        }
+        
+        return count ? count > 0 : false;
       }
       
-      if (!roleAssignments || roleAssignments.length === 0) {
-        console.log('[Auth] No se encontraron asignaciones de rol');
-        return 'USER';
-      }
+      console.log(`[Auth] Admin check result:`, data);
+      return data === true;
       
-      // Verificar si tiene rol admin (role_id = 2)
-      if (roleAssignments.some(ra => ra.role_id === 2)) {
-        console.log('[Auth] Usuario tiene rol ADMIN (role_id = 2)');
-        return 'ADMIN';
-      }
-      
-      // Verificar si tiene rol broker (role_id = 3)
-      if (roleAssignments.some(ra => ra.role_id === 3)) {
-        console.log('[Auth] Usuario tiene rol BROKER (role_id = 3)');
-        return 'BROKER';
-      }
-      
-      console.log('[Auth] Usuario tiene rol USER por defecto');
-      return 'USER';
     } catch (error) {
-      console.error('[Auth] Error en fetchUserRole:', error);
-      return 'USER';
+      console.error('[Auth] Error checking admin status:', error);
+      return false;
     }
   };
-  
-  // Inicializar estado de autenticación
+
+  // Check if email is in admin list (manually maintained fallback)
+  const isAdminEmail = (email: string): boolean => {
+    if (!email) return false;
+    
+    // Hardcoded list of admin emails as last-resort fallback
+    const adminEmails = [
+      'admin@admin.com',
+      // Add other admin emails here
+    ];
+    
+    return adminEmails.includes(email.toLowerCase());
+  };
+
+  // Initialize authentication state
   useEffect(() => {
-    console.log('[Auth] Inicializando proveedor de autenticación');
+    console.log('[Auth] Initializing authentication provider');
     let isMounted = true;
     
     const setData = async () => {
       try {
-        // Verificar primero si hay una sesión de admin en localStorage
-        const adminData = localStorage.getItem('adminUser');
-        if (adminData) {
-          try {
-            const admin = JSON.parse(adminData);
-            console.log('[Auth] Sesión de admin encontrada en localStorage:', admin.email);
-            
-            if (isMounted) {
-              // Comprobar que sigue existiendo en la base de datos
-              const { data: adminStillExists } = await supabase
-                .from('admins') // CORREGIDO: Usar 'admins' en plural
-                .select('*')
-                .eq('email', admin.email)
-                .single();
-              
-              if (!adminStillExists) {
-                console.log('[Auth] El admin ya no existe en la base de datos');
-                localStorage.removeItem('adminUser');
-                localStorage.removeItem('userRole');
-                setLoading(false);
-                return;
-              }
-              
-              // Crear un objeto de usuario para mantener compatibilidad
-              const simulatedUser = {
-                id: admin.id,
-                email: admin.email,
-                user_metadata: { name: admin.name || 'Admin' },
-                app_metadata: { role: 'ADMIN' },
-                role: 'admin'
-              } as unknown as User;
-              
-              setUser(simulatedUser);
-              setUserRole('ADMIN');
-              setLoading(false);
-            }
-            return;
-          } catch (e) {
-            console.error('[Auth] Error parseando datos de admin:', e);
-            localStorage.removeItem('adminUser');
-          }
-        }
-        
-        // Si no hay sesión de admin, verificar sesión normal de Supabase
-        console.log('[Auth] Verificando sesión normal de Supabase');
+        // Check current session with Supabase
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('[Auth] Error obteniendo sesión:', error);
+          console.error('[Auth] Error getting session:', error);
           if (isMounted) setLoading(false);
           return;
         }
         
         if (!session) {
-          console.log('[Auth] No se encontró sesión');
+          console.log('[Auth] No session found');
           if (isMounted) {
             setSession(null);
             setUser(null);
@@ -223,305 +112,304 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
         
-        console.log('[Auth] Sesión encontrada para usuario:', session.user.id);
-        
-        // Verificar si el usuario es admin (comprobando en tabla admins)
-        const adminRecord = await checkAdminEmail(session.user.email || '');
-        
-        if (adminRecord) {
-          console.log('[Auth] Usuario encontrado en tabla admins:', adminRecord.email);
-          
-          if (isMounted) {
-            setUser(session.user);
-            setSession(session);
-            setUserRole('ADMIN');
-            
-            // Guardar en localStorage para futuras verificaciones
-            localStorage.setItem('adminUser', JSON.stringify({
-              id: adminRecord.id,
-              email: adminRecord.email,
-              name: adminRecord.name || 'Admin'
-            }));
-            localStorage.setItem('userRole', 'ADMIN');
-            
-            setLoading(false);
-          }
-          return;
-        }
-        
-        // Si no es admin, continuar con la sesión normal
+        // Set user and session immediately
         if (isMounted) {
           setUser(session.user);
           setSession(session);
-          
-          // Obtener rol de usuario normal
-          const role = await fetchUserRole(session.user.id);
-          console.log('[Auth] Rol obtenido:', role);
-          setUserRole(role);
-          
-          setLoading(false);
+        }
+        
+        console.log('[Auth] Session found for user:', session.user.id);
+        
+        // Use a safer approach to check admin status
+        if (session.user.email) {
+          try {
+            // Try the database check first
+            const isAdmin = await checkIfAdminByEmail(session.user.email);
+            
+            if (isAdmin) {
+              console.log('[Auth] User confirmed as admin in database');
+              if (isMounted) setUserRole('ADMIN');
+            } else {
+              // Fallback to hardcoded check
+              const isAdminHardcoded = isAdminEmail(session.user.email);
+              
+              if (isAdminHardcoded) {
+                console.log('[Auth] User is admin by hardcoded list');
+                if (isMounted) setUserRole('ADMIN');
+              } else {
+                // Not admin, check for broker role
+                const role = await fetchUserRole(session.user.id);
+                if (isMounted) setUserRole(role);
+              }
+            }
+          } catch (error) {
+            console.error('[Auth] Error in admin check:', error);
+            if (isMounted) setUserRole('USER');
+          }
+        } else {
+          if (isMounted) setUserRole('USER');
         }
       } catch (e) {
-        console.error('[Auth] Error en setData:', e);
+        console.error('[Auth] Error in setData:', e);
+      } finally {
         if (isMounted) setLoading(false);
       }
     };
     
     setData();
     
-    // Listener para cambios en la autenticación
+    // Safety timeout - force loading to complete after 3 seconds max
+    const safetyTimeout = setTimeout(() => {
+      if (isMounted && loading) {
+        console.warn('[Auth] Safety timeout triggered, ending loading');
+        setLoading(false);
+        setUserRole('USER');
+      }
+    }, 3000);
+    
+    // Auth state change listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('[Auth] Cambio en estado de autenticación:', event);
+        console.log('[Auth] Auth state change:', event);
         
-        if (isMounted) {
-          if (!session) {
-            console.log('[Auth] No hay sesión en evento de cambio');
-            setSession(null);
+        if (event === 'SIGNED_OUT') {
+          if (isMounted) {
             setUser(null);
+            setSession(null);
             setUserRole(null);
             setLoading(false);
-            return;
           }
-          
-          console.log('[Auth] Nueva sesión en evento de cambio:', session.user.id);
-          
-          // Verificar si el usuario es admin
-          const adminRecord = await checkAdminEmail(session.user.email || '');
-          
-          if (adminRecord) {
-            console.log('[Auth] Usuario es admin en evento de cambio');
-            setUser(session.user);
-            setSession(session);
-            setUserRole('ADMIN');
-            localStorage.setItem('userRole', 'ADMIN');
-            
-            // Guardar en localStorage
-            localStorage.setItem('adminUser', JSON.stringify({
-              id: adminRecord.id,
-              email: adminRecord.email,
-              name: adminRecord.name || 'Admin'
-            }));
-          } else {
-            // Usuario normal
-            setUser(session.user);
-            setSession(session);
-            
-            const role = await fetchUserRole(session.user.id);
-            console.log('[Auth] Rol después de cambio:', role);
-            setUserRole(role);
-          }
-          
-          setLoading(false);
+          return;
         }
+        
+        if (!session) {
+          if (isMounted) {
+            setUser(null);
+            setSession(null);
+            setUserRole(null);
+            setLoading(false);
+          }
+          return;
+        }
+        
+        // Set user and session immediately
+        if (isMounted) {
+          setUser(session.user);
+          setSession(session);
+        }
+        
+        // Check admin status with safer methods
+        if (session.user.email) {
+          try {
+            // Try the database check with timeout protection
+            const isAdmin = await Promise.race([
+              checkIfAdminByEmail(session.user.email),
+              new Promise<boolean>(resolve => setTimeout(() => resolve(false), 2000))
+            ]);
+            
+            if (isAdmin) {
+              console.log('[Auth] User confirmed as admin');
+              if (isMounted) setUserRole('ADMIN');
+            } else {
+              // Fallback to hardcoded list
+              if (isAdminEmail(session.user.email)) {
+                console.log('[Auth] User is admin by hardcoded list');
+                if (isMounted) setUserRole('ADMIN');
+              } else {
+                // Check other roles
+                const role = await fetchUserRole(session.user.id);
+                if (isMounted) setUserRole(role);
+              }
+            }
+          } catch (error) {
+            console.error('[Auth] Error checking admin status:', error);
+            if (isMounted) setUserRole('USER');
+          }
+        } else {
+          if (isMounted) setUserRole('USER');
+        }
+        
+        if (isMounted) setLoading(false);
       }
     );
     
-    // Safety timeout para prevenir carga infinita
-    const safetyTimeout = setTimeout(() => {
-      if (isMounted && loading) {
-        console.warn('[Auth] Safety timeout triggered, forzando loading a false');
-        setLoading(false);
-      }
-    }, 5000);
-    
     return () => {
-      console.log('[Auth] Limpiando proveedor de autenticación');
       isMounted = false;
       clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   }, []);
   
-  // FUNCIÓN CORREGIDA: Iniciar sesión (primero verificando en tabla admins)
-  const signIn = async (email: string, password: string) => {
+  // Get user role with timeout protection
+  const fetchUserRole = async (userId: string): Promise<UserRole> => {
+    if (!userId) return 'USER';
+    
     try {
-      console.log(`[Auth] Iniciando proceso de login para: ${email}`);
+      console.log(`[Auth] Checking roles for user: ${userId}`);
       
-      // Limpiar cualquier dato previo
-      localStorage.removeItem('adminUser');
-      localStorage.removeItem('userRole');
-      localStorage.removeItem('bypassAuth');
+      // Create a timeout promise
+      const timeoutPromise = new Promise<UserRole>(resolve => {
+        setTimeout(() => resolve('USER'), 2000);
+      });
       
-      // PASO 1: Verificar si el email existe en la tabla admins
-      console.log(`[Auth] Verificando si existe en tabla admins: ${email}`);
-      const { data: adminExists } = await supabase
-        .from('admins') // CORREGIDO: Usar 'admins' en plural
-        .select('email')
-        .eq('email', email.toLowerCase());
-      
-      // Si el email existe en tabla admins, intentar autenticación admin
-      if (adminExists && adminExists.length > 0) {
-        console.log(`[Auth] Email encontrado en tabla admins, autenticando...`);
-        const { error: adminError, data: adminData } = await authenticateAdmin(email, password);
-        
-        if (!adminError && adminData) {
-          console.log(`[Auth] Login exitoso como admin`);
-          setUser(adminData);
-          setUserRole('ADMIN');
-          return { error: null };
-        } else {
-          console.error('[Auth] Error autenticando admin:', adminError);
-          return { error: adminError };
+      // Create the role check promise
+      const rolePromise = (async () => {
+        try {
+          // Using a simpler query with count
+          const { count } = await supabase
+            .from('user_role_assignments')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId)
+            .eq('role_id', 3); // 3 = BROKER role
+            
+          if (count && count > 0) {
+            console.log('[Auth] User has BROKER role');
+            return 'BROKER';
+          }
+          
+          return 'USER';
+        } catch (e) {
+          console.error('[Auth] Error checking roles:', e);
+          return 'USER';
         }
-      }
+      })();
       
-      // PASO 2: Si no es admin, intentar autenticación normal con Supabase
-      console.log(`[Auth] No es admin, intentando auth normal de Supabase`);
+      // Race between the actual query and the timeout
+      return Promise.race([rolePromise, timeoutPromise]);
       
-      try {
-        const { error: supabaseError, data } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        
-        if (supabaseError) {
-          console.error('[Auth] Error autenticación Supabase:', supabaseError);
-          return { error: supabaseError };
-        }
-        
-        if (!data || !data.user) {
-          console.error('[Auth] No se recibieron datos de usuario');
-          return { error: new Error('No se recibieron datos de usuario') };
-        }
-        
-        console.log(`[Auth] Usuario autenticado exitosamente:`, data.user);
-        setUser(data.user);
-        setSession(data.session);
-        
-        const role = await fetchUserRole(data.user.id);
-        console.log('[Auth] Rol asignado:', role);
-        setUserRole(role);
-        
-        return { error: null };
-      } catch (authError) {
-        console.error('[Auth] Error inesperado en auth Supabase:', authError);
-        return { error: authError };
-      }
-    } catch (error: any) {
-      console.error('[Auth] Error general en signIn:', error);
-      return { error };
+    } catch (error) {
+      console.error('[Auth] Error in fetchUserRole:', error);
+      return 'USER';
     }
   };
   
-  // Función de registro (solo para usuarios normales)
-  const signUp = async (email: string, password: string) => {
+  // Sign in with safer admin check
+  const signIn = async (email: string, password: string) => {
     try {
-      // Verificar primero si el email existe en tabla admins
-      const adminData = await checkAdminEmail(email);
+      console.log(`[Auth] Starting login process for: ${email}`);
       
-      if (adminData) {
-        return {
-          error: new Error('Este correo ya está registrado como administrador'),
-          data: null
-        };
-      }
-      
-      // Proceder con registro normal
-      const { error, data } = await supabase.auth.signUp({
+      // Authenticate with Supabase
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
       
       if (error) {
-        return { error, data: null };
+        console.error('[Auth] Authentication error:', error);
+        return { error };
       }
       
-      console.log('[Auth] Registro exitoso para:', email);
+      if (!data || !data.user) {
+        console.error('[Auth] No user data received');
+        return { error: new Error('No user data received') };
+      }
       
-      // Asignar rol USER por defecto
-      if (data.user) {
-        // Determinar el role_id para USER
-        let userRoleId = 1; // Default
+      console.log(`[Auth] User authenticated successfully:`, data.user.id);
+      
+      // Set user and session immediately
+      setUser(data.user);
+      setSession(data.session);
+      
+      // Special handling for admin@admin.com (hardcoded for guaranteed access)
+      if (email.toLowerCase() === 'admin@admin.com') {
+        console.log('[Auth] Setting admin role by email match');
+        setUserRole('ADMIN');
+        return { error: null };
+      }
+      
+      // Check admin status in background
+      Promise.resolve().then(async () => {
+        if (!data.user.email) {
+          setUserRole('USER');
+          return;
+        }
         
         try {
-          const { data: roleData } = await supabase
-            .from('user_roles')
-            .select('id')
-            .eq('name', 'USER')
-            .single();
-            
-          if (roleData) {
-            userRoleId = roleData.id;
-            console.log('[Auth] ID de rol USER encontrado:', userRoleId);
+          const isAdmin = await checkIfAdminByEmail(data.user.email);
+          
+          if (isAdmin) {
+            console.log('[Auth] User confirmed as admin');
+            setUserRole('ADMIN');
+          } else if (isAdminEmail(data.user.email)) {
+            console.log('[Auth] User is admin by hardcoded list');
+            setUserRole('ADMIN');
+          } else {
+            const role = await fetchUserRole(data.user.id);
+            console.log(`[Auth] User role: ${role}`);
+            setUserRole(role);
           }
         } catch (e) {
-          console.error('[Auth] Error encontrando ID de rol USER:', e);
+          console.error('[Auth] Error in admin check:', e);
+          setUserRole('USER');
         }
-        
-        // Insertar asignación de rol
-        const { error: roleError } = await supabase
-          .from('user_role_assignments')
-          .insert([{
-            user_id: data.user.id,
-            role_id: userRoleId
-          }]);
-          
-        if (roleError) {
-          console.error('[Auth] Error asignando rol predeterminado:', roleError);
-        } else {
-          console.log(`[Auth] Rol ${userRoleId} asignado a usuario ${data.user.id}`);
-        }
+      });
+      
+      return { error: null };
+    } catch (error: any) {
+      console.error('[Auth] Sign in error:', error);
+      return { error };
+    }
+  };
+  
+  // Sign up (simplified)
+  const signUp = async (email: string, password: string) => {
+    try {
+      // First check if this email is an admin email
+      if (isAdminEmail(email)) {
+        return {
+          error: new Error('This email is already reserved for administrator use'),
+          data: null
+        };
       }
+      
+      // Proceed with normal registration
+      const { error, data } = await supabase.auth.signUp({ email, password });
+      
+      if (error) return { error, data: null };
+      
+      console.log('[Auth] Registration successful');
       
       return { error: null, data };
     } catch (error: any) {
-      console.error('[Auth] Error en signUp:', error);
+      console.error('[Auth] Sign up error:', error);
       return { error, data: null };
     }
   };
   
-  // Cerrar sesión (funciona para admins y usuarios normales)
+  // Sign out
   const signOut = async () => {
     try {
-      console.log('[Auth] Iniciando proceso de cierre de sesión');
-      
-      // Limpiar estado
+      // Clear state first
       setUser(null);
       setSession(null);
       setUserRole(null);
       
-      // Limpiar localStorage
-      localStorage.removeItem('adminUser');
-      localStorage.removeItem('userRole');
-      localStorage.clear();
+      // Then sign out from Supabase
+      await supabase.auth.signOut();
       
-      // Para usuarios normales, cerrar sesión en Supabase
-      await supabase.auth.signOut({ scope: 'global' });
-      
-      // Forzar recarga para limpiar completamente el estado
-      window.location.href = '/';
-      
-      console.log('[Auth] Sesión cerrada correctamente');
+      console.log('[Auth] Signed out successfully');
     } catch (error) {
-      console.error('[Auth] Error en signOut:', error);
-      localStorage.clear();
-      window.location.href = '/';
+      console.error('[Auth] Sign out error:', error);
     }
   };
   
-  // Restablecer contraseña (solo para usuarios normales)
+  // Reset password
   const resetPassword = async (email: string) => {
     try {
-      // Verificar si es admin
-      const adminData = await checkAdminEmail(email);
+      if (!email) return { error: new Error('Email is required') };
       
-      if (adminData) {
+      // Don't allow password reset for admin emails
+      if (isAdminEmail(email)) {
         return {
-          error: new Error('Los administradores deben contactar al soporte técnico para restablecer su contraseña')
+          error: new Error('Administrators should contact technical support to reset their password')
         };
       }
       
-      // Proceso normal para usuarios
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       
-      if (error) {
-        return { error };
-      }
-      
-      return { error: null };
+      return { error };
     } catch (error: any) {
       return { error };
     }
