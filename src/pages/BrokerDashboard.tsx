@@ -3,7 +3,7 @@ import { Header, HeaderSpacer } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Plus, MessageCircle, Eye, EditIcon, TrashIcon, Loader2, Mail, Phone, Calendar } from "lucide-react";
+import { Plus, MessageCircle, Eye, EditIcon, TrashIcon, Loader2, Mail, Phone, Calendar, AlertCircle, Info } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -23,8 +23,15 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { format } from "date-fns";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // Define el tipo para una imagen
 interface ListingImage {
@@ -45,6 +52,7 @@ interface Listing {
   property_type: string;
   images: ListingImage[];
   primaryImage?: string;
+  rejection_reason?: string; // Added field for rejection reason
 }
 
 // Define el tipo para una consulta (inquiry)
@@ -70,6 +78,8 @@ const BrokerDashboard = () => {
   const [loadingInquiries, setLoadingInquiries] = useState(true);
   const [selectedInquiry, setSelectedInquiry] = useState<Inquiry | null>(null);
   const [activeTab, setActiveTab] = useState("properties");
+  const [selectedListing, setSelectedListing] = useState<Listing | null>(null);
+  const [showRejectionModal, setShowRejectionModal] = useState(false);
   
   // Load listings with images
   useEffect(() => {
@@ -80,7 +90,7 @@ const BrokerDashboard = () => {
         // First fetch all listings
         const { data: listingsData, error: listingsError } = await supabase
           .from('listings')
-          .select('*')
+          .select('*, rejection_reason') // Make sure to select rejection_reason field
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
         
@@ -240,6 +250,12 @@ const BrokerDashboard = () => {
     }
   };
   
+  // Function to view rejection reason
+  const handleViewRejectionReason = (listing: Listing) => {
+    setSelectedListing(listing);
+    setShowRejectionModal(true);
+  };
+  
   // Function to mark an inquiry as read
   const markInquiryAsRead = async (id: number) => {
     try {
@@ -306,6 +322,9 @@ const BrokerDashboard = () => {
   
   // Get unread count for tab badge
   const unreadCount = inquiries.filter(inquiry => !inquiry.is_read).length;
+  
+  // Get rejected listings count for badge
+  const rejectedCount = listings.filter(listing => listing.status === 'rejected').length;
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -328,6 +347,48 @@ const BrokerDashboard = () => {
             </Link>
           </Button>
         </div>
+        
+        {/* Rejection Reason Modal */}
+        <Dialog open={showRejectionModal} onOpenChange={setShowRejectionModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center text-red-600">
+                <AlertCircle className="h-5 w-5 mr-2" />
+                Listing Rejected
+              </DialogTitle>
+              <DialogDescription>
+                Your listing "{selectedListing?.title}" was not approved
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="bg-red-50 border border-red-100 rounded-md p-4 my-2">
+              <div className="text-sm font-medium text-gray-800 mb-1">Reason for rejection:</div>
+              <p className="text-gray-700">{selectedListing?.rejection_reason || "No specific reason provided."}</p>
+            </div>
+
+            <div className="text-sm text-gray-600 my-2">
+              You can edit your listing to address these issues and resubmit for approval.
+            </div>
+
+            <DialogFooter className="flex flex-col sm:flex-row sm:justify-end gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowRejectionModal(false)}
+              >
+                Close
+              </Button>
+              <Button
+                asChild
+                className="bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
+              >
+                <Link to={`/listings/${selectedListing?.id}/edit`}>
+                  <EditIcon className="h-4 w-4 mr-2" />
+                  Edit Listing
+                </Link>
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         
         {/* Inquiry Detail Modal */}
         <Dialog open={!!selectedInquiry} onOpenChange={(open) => !open && setSelectedInquiry(null)}>
@@ -392,7 +453,14 @@ const BrokerDashboard = () => {
         
         <Tabs defaultValue="properties" value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="properties">Your Properties</TabsTrigger>
+            <TabsTrigger value="properties" className="relative">
+              Your Properties
+              {rejectedCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                  {rejectedCount}
+                </span>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="inquiries" className="relative">
               Inquiries
               {unreadCount > 0 && (
@@ -451,7 +519,10 @@ const BrokerDashboard = () => {
                       </TableHeader>
                       <TableBody>
                         {listings.map((listing) => (
-                          <TableRow key={listing.id} className="hover:bg-gray-50">
+                          <TableRow 
+                            key={listing.id} 
+                            className={listing.status === 'rejected' ? "hover:bg-red-50/50 bg-red-50/30" : "hover:bg-gray-50"}
+                          >
                             <TableCell>
                               <div className="w-16 h-12 relative rounded-md overflow-hidden">
                                 {listing.primaryImage ? (
@@ -476,12 +547,32 @@ const BrokerDashboard = () => {
                             <TableCell>{formatPrice(listing.price)}</TableCell>
                             <TableCell>{listing.property_type || "RV Park"}</TableCell>
                             <TableCell>
-                              <Badge 
-                                className={getStatusBadgeVariant(listing.status)} 
-                                variant="outline"
-                              >
-                                {listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}
-                              </Badge>
+                              <div className="flex items-center gap-1.5">
+                                <Badge 
+                                  className={getStatusBadgeVariant(listing.status)} 
+                                  variant="outline"
+                                >
+                                  {listing.status.charAt(0).toUpperCase() + listing.status.slice(1)}
+                                </Badge>
+                                
+                                {listing.status === 'rejected' && listing.rejection_reason && (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button
+                                          onClick={() => handleViewRejectionReason(listing)}
+                                          className="rounded-full bg-red-100 p-1 text-red-600 hover:bg-red-200 transition-colors"
+                                        >
+                                          <Info className="h-3.5 w-3.5" />
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <p>View rejection reason</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end items-center gap-2">
@@ -518,6 +609,7 @@ const BrokerDashboard = () => {
             </div>
           </TabsContent>
           
+          {/* Inquiries tab remains the same */}
           <TabsContent value="inquiries" className="space-y-8">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200">
               <div className="p-6 border-b border-gray-100">

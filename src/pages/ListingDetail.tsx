@@ -3,14 +3,15 @@ import { Header, HeaderSpacer } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { useParams, Link } from "react-router-dom";
 import { mockListings } from "@/data/mockListings";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, getListingDocuments, getFileTypeCategory } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { 
   Download, MapPin, Share2, Heart, 
   Calendar, Users, PercentSquare, DollarSign, 
   Building, ChevronLeft, ChevronRight, Maximize2, 
   Star, ExternalLink, MessageSquare, Phone, Mail,
-  Loader2, FileText, FileDown, Send, User, Lock
+  Loader2, FileText, FileDown, Send, User, Lock,
+  FileIcon, File
 } from "lucide-react";
 import { ListingCard } from "@/components/listings/ListingCard";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,18 @@ interface BrokerInfo {
   phone?: string;
 }
 
+// Interface for document type
+interface DocumentData {
+  id: number;
+  name: string;
+  url: string;
+  type: string;
+  size?: number;
+  is_primary?: boolean;
+  description?: string;
+  created_at?: string;
+}
+
 // Interface for both mock and Supabase listings
 interface ListingData {
   id: string | number;
@@ -68,20 +81,17 @@ interface ListingData {
   videoUrl?: string;
   pdfUrl?: string;
   status?: string;
-  documents?: Array<{
-    name: string;
-    url: string;
-    type: string;
-  }>;
+  documents?: DocumentData[];
   property_type?: string;
   created_at?: string;
   updated_at?: string;
   user_id?: string;
+  offering_memorandum_path?: string;
 }
 
 // Current user and date information
 const CURRENT_USER = "William19";
-const CURRENT_DATE = "2025-06-04 12:02:42";
+const CURRENT_DATE = "2025-06-04 12:43:01";
 
 const ListingDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -92,6 +102,8 @@ const ListingDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
+  const [documents, setDocuments] = useState<DocumentData[]>([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
   
   // Contact form state
   const [name, setName] = useState("");
@@ -108,6 +120,25 @@ const ListingDetail = () => {
       setMessage(`I'm interested in ${listing.title}. Please send me more information.`);
     }
   }, [listing]);
+  
+  // Fetch documents separately to ensure we have the latest data
+  useEffect(() => {
+    const fetchDocuments = async () => {
+      if (!id) return;
+      
+      setLoadingDocuments(true);
+      try {
+        const docs = await getListingDocuments(id);
+        setDocuments(docs);
+      } catch (error) {
+        console.error("Error fetching documents:", error);
+      } finally {
+        setLoadingDocuments(false);
+      }
+    };
+    
+    fetchDocuments();
+  }, [id]);
   
   // Fetch listing data from mock data or Supabase
   useEffect(() => {
@@ -130,23 +161,31 @@ const ListingDetail = () => {
             },
             documents: [
               {
+                id: 1,
                 name: "Property Brochure.pdf",
                 url: "/sample-documents/property-brochure.pdf",
-                type: "pdf"
+                type: "pdf",
+                size: 1024 * 1024, // 1MB
+                is_primary: true
               },
               {
+                id: 2,
                 name: "Financial Summary.xlsx",
                 url: "/sample-documents/financial-summary.xlsx",
-                type: "excel"
+                type: "excel",
+                size: 512 * 1024 // 512KB
               },
               {
+                id: 3,
                 name: "Site Map.jpg",
                 url: "/sample-documents/site-map.jpg",
-                type: "image"
+                type: "image",
+                size: 2 * 1024 * 1024 // 2MB
               }
             ]
           };
           setListing(enhancedMockListing);
+          setDocuments(enhancedMockListing.documents || []);
           setLoading(false);
           return;
         }
@@ -188,29 +227,7 @@ const ListingDetail = () => {
           return publicUrl?.publicUrl || '';
         }) || [];
         
-        // Fetch documents for this listing
-        const { data: documentsData, error: documentsError } = await supabase
-          .from('listing_documents')
-          .select('*')
-          .eq('listing_id', id)
-          .order('created_at', { ascending: false });
-          
-        let documents = [];
-        
-        if (!documentsError && documentsData) {
-          documents = documentsData.map(doc => {
-            const { data: publicUrl } = supabase
-              .storage
-              .from('listing-documents')
-              .getPublicUrl(doc.storage_path);
-              
-            return {
-              name: doc.name || doc.storage_path.split('/').pop() || 'Document',
-              url: publicUrl?.publicUrl || '',
-              type: doc.type || 'pdf'
-            };
-          });
-        }
+        // Documents are fetched separately in the other useEffect hook
         
         // Fetch user info if user_id exists
         let brokerInfo: BrokerInfo = { 
@@ -257,6 +274,17 @@ const ListingDetail = () => {
           }
         }
         
+        // Get PDF URL if there is an offering memorandum
+        let pdfUrl = null;
+        if (supabaseListing.offering_memorandum_path) {
+          const { data: publicUrl } = supabase
+            .storage
+            .from('listing-documents')
+            .getPublicUrl(supabaseListing.offering_memorandum_path);
+            
+          pdfUrl = publicUrl?.publicUrl || null;
+        }
+        
         // Format listing data to match our interface - use snake_case field names from database
         const formattedListing: ListingData = {
           id: supabaseListing.id,
@@ -284,18 +312,8 @@ const ListingDetail = () => {
           created_at: supabaseListing.created_at,
           updated_at: supabaseListing.updated_at,
           user_id: supabaseListing.user_id,
-          documents: documents.length > 0 ? documents : [
-            {
-              name: "Property Brochure.pdf",
-              url: "/sample-documents/property-brochure.pdf",
-              type: "pdf"
-            },
-            {
-              name: "Financial Summary.xlsx",
-              url: "/sample-documents/financial-summary.xlsx",
-              type: "excel"
-            }
-          ]
+          pdfUrl: pdfUrl,
+          offering_memorandum_path: supabaseListing.offering_memorandum_path
         };
         
         setListing(formattedListing);
@@ -327,7 +345,7 @@ const handleSubmit = async (e: React.FormEvent) => {
       .from('inquiry')
       .insert([
         { 
-          listing_id: Number(listing.id), // Make sure it's a number if your ID is numeric
+          listing_id: Number(listing?.id), // Make sure it's a number if your ID is numeric
           name,
           email,
           phone,
@@ -412,6 +430,34 @@ const handleSubmit = async (e: React.FormEvent) => {
       title: "Download Started",
       description: `Downloading ${filename}`,
     });
+  };
+
+  // Helper function for document icon and color
+  const getDocumentIconAndColor = (type: string) => {
+    switch (type) {
+      case 'pdf':
+        return { icon: <FileText className="h-6 w-6" />, bg: "bg-red-100 text-red-600" };
+      case 'excel':
+        return { icon: <FileText className="h-6 w-6" />, bg: "bg-green-100 text-green-600" };
+      case 'word':
+        return { icon: <FileText className="h-6 w-6" />, bg: "bg-blue-100 text-blue-600" };
+      case 'powerpoint':
+        return { icon: <FileText className="h-6 w-6" />, bg: "bg-orange-100 text-orange-600" };
+      case 'image':
+        return { icon: <FileText className="h-6 w-6" />, bg: "bg-purple-100 text-purple-600" };
+      default:
+        return { icon: <FileText className="h-6 w-6" />, bg: "bg-gray-100 text-gray-600" };
+    }
+  };
+  
+  // Helper function to format file size
+  const formatFileSize = (bytes?: number): string => {
+    if (!bytes) return '';
+    
+    if (bytes < 1024) return bytes + ' B';
+    else if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    else if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    else return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
   };
   
   // Loading state
@@ -629,6 +675,8 @@ const handleSubmit = async (e: React.FormEvent) => {
         </DialogContent>
       </Dialog>
       
+      {/* Rest of component remains the same until the Files Section */}
+      
       {/* Breadcrumb */}
       <div className="bg-white border-b py-3 shadow-sm">
         <div className="container mx-auto px-4">
@@ -824,7 +872,7 @@ const handleSubmit = async (e: React.FormEvent) => {
               </div>
             </div>
 
-            {/* Files Section */}
+            {/* UPDATED: Files Section with direct database integration */}
             <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-200">
               <div className="p-6 border-b border-gray-100">
                 <h2 className="text-xl font-bold">Property Documents</h2>
@@ -833,73 +881,94 @@ const handleSubmit = async (e: React.FormEvent) => {
                 </p>
               </div>
               <div className="p-6">
-                <div className="grid grid-cols-1 gap-3">
-                  {listing.documents && listing.documents.map((doc, index) => (
-                    <div 
-                      key={index}
-                      className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                    >
-                      <div className="flex items-center">
-                        <div className="bg-blue-100 text-blue-700 p-2 rounded-lg mr-4">
-                          <FileText className="h-6 w-6" />
+                {loadingDocuments ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 text-gray-300 animate-spin mr-3" />
+                    <p className="text-gray-500">Loading documents...</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3">
+                    {documents && documents.length > 0 ? (
+                      documents.map((doc, index) => {
+                        const { icon, bg } = getDocumentIconAndColor(doc.type);
+                        return (
+                          <div 
+                            key={index}
+                            className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                          >
+                            <div className="flex items-center">
+                              <div className={cn("p-2 rounded-lg mr-4", bg)}>
+                                {icon}
+                              </div>
+                              <div>
+                                <p className="font-medium">{doc.name}</p>
+                                <p className="text-xs text-gray-500">
+                                  {doc.is_primary ? "Primary Document • " : ""}
+                                  {formatFileSize(doc.size)}
+                                </p>
+                              </div>
+                            </div>
+                            <Button 
+                              variant="outline"
+                              size="sm"
+                              className="text-blue-600"
+                              onClick={() => handleDownload(doc.url, doc.name)}
+                            >
+                              <FileDown className="h-4 w-4 mr-1" />
+                              Download
+                            </Button>
+                          </div>
+                        );
+                      })
+                    ) : listing.pdfUrl ? (
+                      // If no documents but we have an offering memorandum
+                      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                        <div className="flex items-center">
+                          <div className="bg-red-100 text-red-700 p-2 rounded-lg mr-4">
+                            <FileText className="h-6 w-6" />
+                          </div>
+                          <div>
+                            <p className="font-medium">Offering Memorandum</p>
+                            <p className="text-xs text-gray-500">Complete property details (PDF)</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium">{doc.name}</p>
-                          <p className="text-xs text-gray-500">Click to download</p>
-                        </div>
+                        <Button 
+                          variant="outline"
+                          size="sm"
+                          className="text-blue-600"
+                          onClick={() => handleDownload(listing.pdfUrl!, "offering-memorandum.pdf")}
+                        >
+                          <FileDown className="h-4 w-4 mr-1" />
+                          Download
+                        </Button>
                       </div>
-                      <Button 
-                        variant="outline"
-                        size="sm"
-                        className="text-blue-600"
-                        onClick={() => handleDownload(doc.url, doc.name)}
-                      >
-                        <FileDown className="h-4 w-4 mr-1" />
-                        Download
-                      </Button>
-                    </div>
-                  ))}
-                  
-                  {/* If no documents, show a download button for the offering memorandum */}
-                  {(!listing.documents || listing.documents.length === 0) && listing.pdfUrl && (
-                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                      <div className="flex items-center">
-                        <div className="bg-blue-100 text-blue-700 p-2 rounded-lg mr-4">
-                          <FileText className="h-6 w-6" />
+                    ) : (
+                      // If no documents at all, show placeholder
+                      <div className="text-center py-8">
+                        <div className="mb-4">
+                          <FileText className="h-16 w-16 mx-auto text-gray-200" />
                         </div>
-                        <div>
-                          <p className="font-medium">Offering Memorandum</p>
-                          <p className="text-xs text-gray-500">Complete property details (PDF)</p>
-                        </div>
+                        <h3 className="text-lg font-medium mb-1">No documents available</h3>
+                        <p className="text-gray-500 mb-4">
+                          The broker hasn't uploaded any documents for this property yet.
+                        </p>
+                        <Button
+                          variant="outline" 
+                          onClick={() => setContactModalOpen(true)}
+                          className="text-[#f74f4f]"
+                        >
+                          <MessageSquare className="h-4 w-4 mr-2" />
+                          Request Property Documents
+                        </Button>
                       </div>
-                      <Button 
-                        variant="outline"
-                        size="sm"
-                        className="text-blue-600"
-                        onClick={() => handleDownload(listing.pdfUrl!, "offering-memorandum.pdf")}
-                      >
-                        <FileDown className="h-4 w-4 mr-1" />
-                        Download
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* If no documents at all, show placeholder */}
-                  {(!listing.documents || listing.documents.length === 0) && !listing.pdfUrl && (
-                    <div className="text-center py-6">
-                      <div className="mb-3">
-                        <FileText className="h-12 w-12 mx-auto text-gray-300" />
-                      </div>
-                      <h3 className="text-lg font-medium mb-1">No documents available</h3>
-                      <p className="text-gray-500 text-sm">
-                        Contact the agent for additional property information
-                      </p>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             
+            {/* Rest of the component remains unchanged */}
+
             {/* Detailed Information */}
             <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-200">
               <Tabs defaultValue="description" className="w-full">
@@ -946,17 +1015,28 @@ The park is well-maintained and includes amenities such as a swimming pool, club
 This turnkey operation is perfect for investors looking to enter the growing RV park and campground industry with an established, profitable business.`}
                   </p>
                   
-                  {listing.pdfUrl && (
+                  {/* Updated: Only show download button if we have either a primary document or specific PDF URL */}
+                  {(listing.pdfUrl || documents?.some(doc => doc.is_primary && doc.type === 'pdf')) && (
                     <Button 
                       variant="outline" 
                       className="flex items-center mt-4 border-[#f74f4f]/20 text-[#f74f4f] hover:bg-[#f74f4f]/5"
-                      onClick={() => handleDownload(listing.pdfUrl!, "offering-memorandum.pdf")}
+                      onClick={() => {
+                        // Try to download primary document first, then fall back to pdfUrl
+                        const primaryPdf = documents?.find(doc => doc.is_primary && doc.type === 'pdf');
+                        if (primaryPdf) {
+                          handleDownload(primaryPdf.url, primaryPdf.name);
+                        } else if (listing.pdfUrl) {
+                          handleDownload(listing.pdfUrl, "offering-memorandum.pdf");
+                        }
+                      }}
                     >
                       <Download className="h-4 w-4 mr-2" />
                       Download Offering Memorandum
                     </Button>
                   )}
                 </TabsContent>
+
+                {/* Rest of the tabs remain the same */}
                 
                 <TabsContent value="features" className="mt-0 p-6">
                   <h2 className="text-xl font-bold mb-4">Features & Amenities</h2>
