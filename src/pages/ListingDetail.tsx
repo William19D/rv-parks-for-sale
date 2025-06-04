@@ -971,7 +971,7 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
               </div>
             </div>
             
-            {/* Contact form with enhanced styling */}
+            {/* Enhanced contact CTA */}
             <div className="bg-gradient-to-br from-[#f74f4f] to-[#ff7a45] rounded-xl overflow-hidden shadow-md">
               <div className="relative p-6">
                 <div className="absolute inset-0 opacity-10">
