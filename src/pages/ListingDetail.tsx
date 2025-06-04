@@ -10,7 +10,7 @@ import {
   Calendar, Users, PercentSquare, DollarSign, 
   Building, ChevronLeft, ChevronRight, Maximize2, 
   Star, ExternalLink, MessageSquare, Phone, Mail,
-  Loader2, FileText, FileDown
+  Loader2, FileText, FileDown, Send, User, Lock
 } from "lucide-react";
 import { ListingCard } from "@/components/listings/ListingCard";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +25,6 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { ContactForm } from "@/components/listings/ContactForm";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +33,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 // Interface for broker information
 interface BrokerInfo {
@@ -79,8 +80,8 @@ interface ListingData {
 }
 
 // Current user and date information
-const CURRENT_USER = "Daniel Esteban Muñoz Hernandez";
-const CURRENT_DATE = "2025-05-30 14:26:42";
+const CURRENT_USER = "William19";
+const CURRENT_DATE = "2025-06-04 12:02:42";
 
 const ListingDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -91,7 +92,22 @@ const ListingDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
+  
+  // Contact form state
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  
   const { toast } = useToast();
+  
+  // Set default message when listing is loaded
+  useEffect(() => {
+    if (listing) {
+      setMessage(`I'm interested in ${listing.title}. Please send me more information.`);
+    }
+  }, [listing]);
   
   // Fetch listing data from mock data or Supabase
   useEffect(() => {
@@ -301,6 +317,59 @@ const ListingDetail = () => {
     }
   }, [id, toast]);
   
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setSubmitting(true);
+  
+  try {
+    // Save inquiry to database
+    const { data, error } = await supabase
+      .from('inquiry')
+      .insert([
+        { 
+          listing_id: Number(listing.id), // Make sure it's a number if your ID is numeric
+          name,
+          email,
+          phone,
+          message
+        }
+      ]);
+    
+    if (error) {
+      console.error('Error saving inquiry:', error);
+      toast({
+        title: "Error",
+        description: "There was a problem sending your inquiry. Please try again.",
+        variant: "destructive",
+      });
+      setSubmitting(false);
+      return;
+    }
+    
+    // Show success message
+    toast({
+      title: "Inquiry Sent!",
+      description: `Your inquiry about ${listing?.title} has been sent. We'll contact you shortly.`,
+      duration: 5000,
+    });
+    
+    // Reset form and close modal
+    setSubmitting(false);
+    setName("");
+    setEmail("");
+    setPhone("");
+    setContactModalOpen(false);
+    
+  } catch (err) {
+    console.error('Exception in handleSubmit:', err);
+    toast({
+      title: "Error",
+      description: "There was a problem sending your inquiry. Please try again.",
+      variant: "destructive",
+    });
+    setSubmitting(false);
+  }
+};  
   // Auto slide images
   useEffect(() => {
     if (!listing || isFullscreen) return;
@@ -473,20 +542,94 @@ const ListingDetail = () => {
         </div>
       )}
       
-      {/* Contact Broker Modal */}
+      {/* Contact Form Modal */}
       <Dialog open={contactModalOpen} onOpenChange={setContactModalOpen}>
-        <DialogContent className="sm:max-w-[500px] p-0">
+        <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden">
           <DialogHeader className="p-6 pb-2">
-            <DialogTitle className="text-xl">Contact Broker about {listing.title}</DialogTitle>
+            <DialogTitle className="text-xl">Interested in this property?</DialogTitle>
             <DialogDescription>
-              Send a message to {listing.broker?.name || "the broker"} about this property.
+              Fill out the form below and we'll send you more information about {listing.title}.
             </DialogDescription>
           </DialogHeader>
-          {listing && <ContactForm listing={listing as any} />}
+          
+          <div className="bg-white">
+            <form onSubmit={handleSubmit} className="space-y-4 p-6">
+              <div className="relative">
+                <Input
+                  placeholder="Your Name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="pl-9 bg-gray-50 border-gray-200 focus:border-[#f74f4f] focus:ring-[#f74f4f]/10"
+                  required
+                />
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              </div>
+              
+              <div className="relative">
+                <Input
+                  type="email"
+                  placeholder="Email Address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="pl-9 bg-gray-50 border-gray-200 focus:border-[#f74f4f] focus:ring-[#f74f4f]/10"
+                  required
+                />
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              </div>
+              
+              <div className="relative">
+                <Input
+                  type="tel"
+                  placeholder="Phone Number"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="pl-9 bg-gray-50 border-gray-200 focus:border-[#f74f4f] focus:ring-[#f74f4f]/10"
+                  required
+                />
+                <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              </div>
+              
+              <div className="relative">
+                <Textarea
+                  placeholder="Your Message"
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  rows={4}
+                  className="pl-9 pt-3 bg-gray-50 border-gray-200 focus:border-[#f74f4f] focus:ring-[#f74f4f]/10"
+                  required
+                />
+                <MessageSquare className="absolute left-3 top-3.5 h-4 w-4 text-gray-400" />
+              </div>
+              
+              <Button 
+                type="submit" 
+                className="w-full bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
+                size="lg"
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <>
+                    <div className="mr-2 h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="mr-2 h-4 w-4" />
+                    Send Inquiry
+                  </>
+                )}
+              </Button>
+              
+              <div className="text-xs text-center text-gray-500 flex items-center justify-center">
+                <Lock className="h-3 w-3 mr-1 text-gray-400" />
+                By sending, you agree to our <a href="#" className="mx-1 text-[#f74f4f] hover:underline">Privacy Policy</a>
+              </div>
+            </form>
+          </div>
         </DialogContent>
       </Dialog>
       
-      {/* Breadcrumb - Removed "Back to Listings" link */}
+      {/* Breadcrumb */}
       <div className="bg-white border-b py-3 shadow-sm">
         <div className="container mx-auto px-4">
           <div className="flex items-center text-sm">
@@ -926,73 +1069,17 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
           
           {/* Sidebar - 1/3 width on desktop */}
           <div className="space-y-6">
-            {/* Broker Profile - with single Contact Broker button */}
-            <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-200">
-              <div className="p-6 border-b border-gray-100">
-                <h3 className="text-lg font-bold">Listing Agent</h3>
-                <div className="text-xs text-gray-500 mt-1">Viewed on: {CURRENT_DATE}</div>
-              </div>
+            {/* Single "Interested in this property?" button */}
+            <div className="bg-gradient-to-br from-[#f74f4f] to-[#ff7a45] rounded-xl shadow-md">
               <div className="p-6">
-                <div className="flex items-center mb-4">
-                  <div className="h-16 w-16 rounded-full overflow-hidden bg-gray-100 mr-4">
-                    <img 
-                      src={listing.broker?.avatar || "https://randomuser.me/api/portraits/men/32.jpg"} 
-                      alt={listing.broker?.name || CURRENT_USER} 
-                      className="h-full w-full object-cover"
-                    />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-lg">{listing.broker?.name || CURRENT_USER}</h4>
-                    <p className="text-sm text-gray-500">{listing.broker?.company || "RV Park Specialists"}</p>
-                  </div>
-                </div>
-                
-                <div className="space-y-3 mb-4">
-                  {/* Single Contact Broker button */}
-                  <Button 
-                    className="w-full bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
-                    size="lg"
-                    onClick={() => setContactModalOpen(true)}
-                  >
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Contact Broker
-                  </Button>
-                </div>
-                
-                <div className="text-sm text-gray-500">
-                  <p className="mb-2">
-                    Typically responds within 24 hours
-                  </p>
-                  <div className="flex items-center">
-                    <Calendar className="h-4 w-4 mr-1 text-gray-400" />
-                    <span>Member since 2023</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Enhanced contact CTA */}
-            <div className="bg-gradient-to-br from-[#f74f4f] to-[#ff7a45] rounded-xl overflow-hidden shadow-md">
-              <div className="relative p-6">
-                <div className="absolute inset-0 opacity-10">
-                  <div className="absolute -top-10 -right-10 w-40 h-40 bg-white rounded-full blur-3xl"></div>
-                  <div className="absolute -bottom-20 -left-10 w-40 h-40 bg-white rounded-full blur-3xl"></div>
-                </div>
-                
-                <div className="relative z-10">
-                  <h3 className="text-xl font-bold text-white mb-1">Interested in this property?</h3>
-                  <p className="text-white/80 mb-4">
-                    Contact the broker now to learn more about this listing.
-                  </p>
-                  
-                  <Button 
-                    className="w-full bg-white hover:bg-white/90 text-[#f74f4f]"
-                    size="lg"
-                    onClick={() => setContactModalOpen(true)}
-                  >
-                    Contact Broker Now
-                  </Button>
-                </div>
+                <h3 className="text-xl font-bold text-white mb-4">Interested in this property?</h3>
+                <Button 
+                  className="w-full bg-white hover:bg-white/90 text-[#f74f4f]"
+                  size="lg"
+                  onClick={() => setContactModalOpen(true)}
+                >
+                  Request Information
+                </Button>
               </div>
             </div>
             
@@ -1023,8 +1110,8 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
                 </div>
               </div>
               <Button asChild className="w-full bg-white text-purple-900 hover:bg-gray-100">
-                <a href="https://roverpass.com/demo" target="_blank" rel="noopener noreferrer">
-                  Schedule a Demo
+                <a href="https://www.roverpass.com/p/campground-reservation-software" target="_blank" rel="noopener noreferrer">
+                  Learn More
                 </a>
               </Button>
             </div>
@@ -1056,16 +1143,14 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
         {brokerListings.length > 0 && (
           <div className="mt-12">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold">More Properties from this Agent</h2>
-              {listing.broker && (
-                <Link 
-                  to={`/broker/${listing.broker.id}`} 
-                  className="text-[#f74f4f] hover:underline flex items-center"
-                >
-                  View all listings
-                  <ExternalLink className="h-4 w-4 ml-1" />
-                </Link>
-              )}
+              <h2 className="text-2xl font-bold">Similar Properties</h2>
+              <Link 
+                to="/listings" 
+                className="text-[#f74f4f] hover:underline flex items-center"
+              >
+                View all listings
+                <ExternalLink className="h-4 w-4 ml-1" />
+              </Link>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {brokerListings.map(listing => (

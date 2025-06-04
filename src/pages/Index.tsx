@@ -281,8 +281,8 @@ const Index = () => {
               </div>
               
               <Button asChild size="lg" className="mt-8 bg-[#f74f4f] hover:bg-[#e43c3c]">
-                <a href="https://www.roverpass.com/p/demo" target="_blank" rel="noopener" className="flex items-center gap-2">
-                  Book a Demo
+                <a href="https://www.roverpass.com/p/campground-reservation-software" target="_blank" rel="noopener" className="flex items-center gap-2">
+                  Learn More
                   <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                 </a>
               </Button>
@@ -522,7 +522,7 @@ const Index = () => {
               </Link>
             </Button>
             <Button asChild size="lg" className="bg-white text-[#f74f4f] hover:bg-gray-100 hover:shadow-lg transition-all group">
-              <a href="https://www.roverpass.com/p/demo" target="_blank" rel="noopener" className="flex items-center gap-2">
+              <a href="https://www.roverpass.com/p/campground-reservation-software" target="_blank" rel="noopener" className="flex items-center gap-2">
                 Get Reservation Software
                 <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
               </a>
