@@ -33,7 +33,7 @@ export const AdminRoute = ({ children }: AdminRouteProps) => {
   // Verificar autenticación de admin al cargar
   useEffect(() => {
     const checkAdminAuth = async () => {
-      console.log('[AdminRoute] Verificando credenciales de administrador...');
+      console.log('[AdminRoute] Loading...');
       
       // IMPORTANTE: Limpiar cualquier bypass que pueda existir
       localStorage.removeItem('bypassAuth');
@@ -116,7 +116,7 @@ export const AdminRoute = ({ children }: AdminRouteProps) => {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
-        <p className="mt-4 text-gray-600">Verificando credenciales de administrador...</p>
+        <p className="mt-4 text-gray-600">Loading...</p>
       </div>
     );
   }
