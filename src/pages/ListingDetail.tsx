@@ -25,6 +25,15 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { ContactForm } from "@/components/listings/ContactForm";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 // Interface for broker information
 interface BrokerInfo {
@@ -81,6 +90,7 @@ const ListingDetail = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [contactModalOpen, setContactModalOpen] = useState(false);
   const { toast } = useToast();
   
   // Fetch listing data from mock data or Supabase
@@ -462,6 +472,19 @@ const ListingDetail = () => {
           </div>
         </div>
       )}
+      
+      {/* Contact Broker Modal */}
+      <Dialog open={contactModalOpen} onOpenChange={setContactModalOpen}>
+        <DialogContent className="sm:max-w-[500px] p-0">
+          <DialogHeader className="p-6 pb-2">
+            <DialogTitle className="text-xl">Contact Broker about {listing.title}</DialogTitle>
+            <DialogDescription>
+              Send a message to {listing.broker?.name || "the broker"} about this property.
+            </DialogDescription>
+          </DialogHeader>
+          {listing && <ContactForm listing={listing as any} />}
+        </DialogContent>
+      </Dialog>
       
       {/* Breadcrumb - Removed "Back to Listings" link */}
       <div className="bg-white border-b py-3 shadow-sm">
@@ -903,7 +926,7 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
           
           {/* Sidebar - 1/3 width on desktop */}
           <div className="space-y-6">
-            {/* Broker Profile - Removed reviews section */}
+            {/* Broker Profile - with single Contact Broker button */}
             <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-200">
               <div className="p-6 border-b border-gray-100">
                 <h3 className="text-lg font-bold">Listing Agent</h3>
@@ -925,20 +948,14 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
                 </div>
                 
                 <div className="space-y-3 mb-4">
+                  {/* Single Contact Broker button */}
                   <Button 
                     className="w-full bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
                     size="lg"
+                    onClick={() => setContactModalOpen(true)}
                   >
-                    <Phone className="h-4 w-4 mr-2" />
-                    Contact Agent
-                  </Button>
-                  
-                  <Button 
-                    variant="outline" 
-                    className="w-full"
-                  >
-                    <Mail className="h-4 w-4 mr-2" />
-                    Email Agent
+                    <MessageSquare className="h-4 w-4 mr-2" />
+                    Contact Broker
                   </Button>
                 </div>
                 
@@ -965,39 +982,16 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
                 <div className="relative z-10">
                   <h3 className="text-xl font-bold text-white mb-1">Interested in this property?</h3>
                   <p className="text-white/80 mb-4">
-                    Fill out the form below and the agent will contact you shortly.
+                    Contact the broker now to learn more about this listing.
                   </p>
                   
-                  {/* Simple contact form instead of using the ContactForm component */}
-                  <div className="space-y-3">
-                    <div>
-                      <input 
-                        type="text" 
-                        placeholder="Your Name" 
-                        className="w-full p-3 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/60"
-                      />
-                    </div>
-                    <div>
-                      <input 
-                        type="email" 
-                        placeholder="Your Email" 
-                        className="w-full p-3 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/60"
-                      />
-                    </div>
-                    <div>
-                      <textarea 
-                        placeholder="Your Message" 
-                        rows={3}
-                        className="w-full p-3 rounded bg-white/10 border border-white/20 text-white placeholder:text-white/60"
-                      ></textarea>
-                    </div>
-                    <Button className="w-full bg-white hover:bg-white/90 text-[#f74f4f]">
-                      Send Message
-                    </Button>
-                    <p className="text-xs text-white/70 text-center pt-2">
-                      By submitting, you agree to our privacy policy
-                    </p>
-                  </div>
+                  <Button 
+                    className="w-full bg-white hover:bg-white/90 text-[#f74f4f]"
+                    size="lg"
+                    onClick={() => setContactModalOpen(true)}
+                  >
+                    Contact Broker Now
+                  </Button>
                 </div>
               </div>
             </div>
