@@ -29,7 +29,7 @@ export interface Listing {
   };
   pdfUrl?: string;
   createdAt: string;
-  featured: boolean;
+  featured: boolean; // We'll simulate this since it doesn't exist in the DB
   status: string; // For approval status: 'approved', 'pending', 'rejected', etc.
 }
 
@@ -53,23 +53,14 @@ export const fetchApprovedListings = async (filters?: ListingFilters): Promise<L
   try {
     console.log('[ListingService] Fetching approved listings with filters:', JSON.stringify(filters || {}));
     
-    // Always include the approved filter in all queries
-    // Using a more explicit field list to avoid potential issues
+    // Simplified query - no join with users table and only existing columns
     let query = supabase
       .from('listings')
       .select(`
         id, title, description, price, address, city, state, 
         latitude, longitude, num_sites, occupancy_rate, annual_revenue, 
-        cap_rate, created_at, featured, status, property_type,
-        listing_images(storage_path, is_primary),
-        user:user_id (
-          id, 
-          email,
-          full_name,
-          avatar_url, 
-          phone, 
-          company_name
-        )
+        cap_rate, created_at, status, property_type, user_id,
+        listing_images(storage_path, is_primary)
       `)
       .eq('status', 'approved'); // Only fetch approved listings
 
@@ -155,9 +146,6 @@ export const fetchApprovedListings = async (filters?: ListingFilters): Promise<L
             images.unshift(primaryImage);
           }
           
-          // Fix the user data access - handle case where it might be an array
-          const userData = Array.isArray(listing.user) ? listing.user[0] : listing.user;
-          
           return {
             id: listing.id,
             title: listing.title || 'Untitled Listing',
@@ -176,15 +164,15 @@ export const fetchApprovedListings = async (filters?: ListingFilters): Promise<L
             capRate: listing.cap_rate || 0,
             images: images,
             broker: {
-              id: userData?.id || '',
-              name: userData?.full_name || 'Unknown',
-              email: userData?.email || '',
-              phone: userData?.phone || '',
-              company: userData?.company_name || '',
-              avatar: userData?.avatar_url || '/default-avatar.png'
+              id: listing.user_id || '',
+              name: 'Contact Agent',
+              email: 'contact@example.com',
+              phone: '',
+              company: '',
+              avatar: '/default-avatar.png'
             },
             createdAt: listing.created_at || new Date().toISOString(),
-            featured: !!listing.featured,
+            featured: false, // Since featured column doesn't exist, we default to false
             status: listing.status || 'approved'
           };
         } catch (itemError) {
@@ -203,42 +191,34 @@ export const fetchApprovedListings = async (filters?: ListingFilters): Promise<L
 };
 
 /**
- * Fetches featured listings that are approved - accessible to all users
+ * Fetches "featured" listings - since there's no featured column, 
+ * we'll just get the most recent approved listings
  */
 export const fetchFeaturedApprovedListings = async (): Promise<Listing[]> => {
   try {
-    console.log('[ListingService] Fetching featured approved listings');
+    console.log('[ListingService] Fetching featured (newest) approved listings');
     
-    // Using a more explicit field list for reliability
+    // Modified query - no featured column, just get the newest listings
     const { data, error } = await supabase
       .from('listings')
       .select(`
         id, title, description, price, address, city, state, 
         latitude, longitude, num_sites, occupancy_rate, annual_revenue, 
-        cap_rate, created_at, featured, status, property_type,
-        listing_images(storage_path, is_primary),
-        user:user_id (
-          id, 
-          email,
-          full_name, 
-          avatar_url, 
-          phone, 
-          company_name
-        )
+        cap_rate, created_at, status, property_type, user_id,
+        listing_images(storage_path, is_primary)
       `)
-      .eq('status', 'approved')  // Only approved listings
-      .eq('featured', true)      // Only featured listings
+      .eq('status', 'approved')
       .order('created_at', { ascending: false })
-      .limit(3); // Limit to top 3 featured listings
+      .limit(3);
     
     if (error) {
       console.error('[ListingService] Error fetching featured listings:', error.message);
       return [];
     }
     
-    console.log(`[ListingService] Found ${data?.length || 0} featured listings`);
+    console.log(`[ListingService] Found ${data?.length || 0} recent listings`);
     
-    // Transform data to match the Listing interface (same as in fetchApprovedListings)
+    // Transform data to match the Listing interface
     if (data && data.length > 0) {
       return data.map(listing => {
         try {
@@ -259,8 +239,15 @@ export const fetchFeaturedApprovedListings = async (): Promise<Listing[]> => {
             images.unshift(primaryImage);
           }
           
-          // Fix the user data access - handle case where it might be an array
-          const userData = Array.isArray(listing.user) ? listing.user[0] : listing.user;
+          // Create the broker with default values
+          const broker = {
+            id: listing.user_id || '',
+            name: 'Contact Agent',
+            email: 'contact@example.com',
+            phone: '',
+            company: '',
+            avatar: '/default-avatar.png'
+          };
           
           return {
             id: listing.id,
@@ -279,16 +266,9 @@ export const fetchFeaturedApprovedListings = async (): Promise<Listing[]> => {
             annualRevenue: listing.annual_revenue || 0,
             capRate: listing.cap_rate || 0,
             images: images,
-            broker: {
-              id: userData?.id || '',
-              name: userData?.full_name || 'Unknown',
-              email: userData?.email || '',
-              phone: userData?.phone || '',
-              company: userData?.company_name || '',
-              avatar: userData?.avatar_url || '/default-avatar.png'
-            },
+            broker: broker,
             createdAt: listing.created_at || new Date().toISOString(),
-            featured: true,
+            featured: true, // We mark these as featured in the response
             status: listing.status || 'approved'
           };
         } catch (itemError) {
@@ -312,22 +292,14 @@ export const fetchApprovedListingById = async (id: string): Promise<Listing | nu
   try {
     console.log(`[ListingService] Fetching approved listing with ID: ${id}`);
     
-    // Using a more explicit field list for reliability
+    // Simplified query - no join with users table and no featured column
     const { data, error } = await supabase
       .from('listings')
       .select(`
         id, title, description, price, address, city, state, 
         latitude, longitude, num_sites, occupancy_rate, annual_revenue, 
-        cap_rate, created_at, featured, status, property_type,
-        listing_images(storage_path, is_primary),
-        user:user_id (
-          id, 
-          email,
-          full_name,
-          avatar_url, 
-          phone, 
-          company_name
-        )
+        cap_rate, created_at, status, property_type, user_id,
+        listing_images(storage_path, is_primary)
       `)
       .eq('id', id)
       .eq('status', 'approved')  // Only return if approved
@@ -359,9 +331,6 @@ export const fetchApprovedListingById = async (id: string): Promise<Listing | nu
           images.unshift(primaryImage);
         }
         
-        // Fix the user data access - handle case where it might be an array
-        const userData = Array.isArray(data.user) ? data.user[0] : data.user;
-        
         return {
           id: data.id,
           title: data.title || 'Untitled Listing',
@@ -380,15 +349,15 @@ export const fetchApprovedListingById = async (id: string): Promise<Listing | nu
           capRate: data.cap_rate || 0,
           images: images,
           broker: {
-            id: userData?.id || '',
-            name: userData?.full_name || 'Unknown',
-            email: userData?.email || '',
-            phone: userData?.phone || '',
-            company: userData?.company_name || '',
-            avatar: userData?.avatar_url || '/default-avatar.png'
+            id: data.user_id || '',
+            name: 'Contact Agent',
+            email: 'contact@example.com',
+            phone: '',
+            company: '',
+            avatar: '/default-avatar.png'
           },
           createdAt: data.created_at || new Date().toISOString(),
-          featured: !!data.featured,
+          featured: false, // Since featured doesn't exist in DB, default to false
           status: data.status || 'approved'
         };
       } catch (processingError) {

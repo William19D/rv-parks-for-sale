@@ -109,7 +109,7 @@ export const ListingCard = ({ listing, className }: ListingCardProps) => {
           {/* Badge for featured listings */}
           {listing.featured && (
             <Badge className="absolute top-2 left-2 bg-[#f74f4f] text-white font-medium">
-              <Star className="h-3 w-3 mr-1 fill-white" /> Featured
+              <Star className="h-3 w-3 mr-1 fill-white" /> Newest
             </Badge>
           )}
 
