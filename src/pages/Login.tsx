@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,12 +16,32 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const { signIn } = useAuth();
+  const { signIn, user, isAdmin, roles } = useAuth();
+  
+  // Handle redirection after successful authentication
+  useEffect(() => {
+    if (!user) return;
+    
+    // This will run when the user authenticates
+    console.log('[Login] User authenticated, preparing redirect');
+    console.log('[Login] Roles:', roles);
+    console.log('[Login] Is admin:', isAdmin);
+    
+    // Short delay to ensure roles have been processed
+    const redirectTimeout = setTimeout(() => {
+      // Get the intended destination or use default based on role
+      const from = location.state?.from?.pathname || (isAdmin ? '/admin/dashboard' : '/');
+      console.log(`[Login] Redirecting to: ${from}`);
+      navigate(from, { replace: true });
+    }, 200);
+    
+    return () => clearTimeout(redirectTimeout);
+  }, [user, isAdmin, roles, navigate, location.state]);
   
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validations
+    // Simple validations
     if (!email) {
       toast({
         title: "Required field",
@@ -54,7 +74,6 @@ const Login = () => {
     try {
       console.log(`[Login] Attempting to sign in with: ${email}`);
       
-      // Use the signIn function from useAuth
       const { error } = await signIn(email, password);
 
       if (error) {
@@ -68,13 +87,15 @@ const Login = () => {
         return;
       }
       
-      // Redirection will be handled automatically by useAuth hook and App.tsx
-      // based on the user's role (admin or not)
+      console.log('[Login] Authentication successful');
       
+      // Show success toast
       toast({
         title: "Welcome",
         description: "You have successfully logged in",
       });
+      
+      // Redirection is handled by useEffect above
       
     } catch (error: any) {
       console.error('[Login] Unexpected error:', error);
@@ -83,7 +104,6 @@ const Login = () => {
         description: "An unexpected error occurred",
         variant: "destructive",
       });
-    } finally {
       setLoading(false);
     }
   };

@@ -29,26 +29,27 @@ import AdminListings from "./pages/admin/Listings";
 import { useAuth, AuthProvider } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
-// IMPORTANTE: Importar el AdminRoute correctamente desde su archivo propio
+// Import AdminRoute component
 import { AdminRoute } from "@/components/admin/AdminRoute";
 
 const queryClient = new QueryClient();
 
-// Componente que maneja las rutas
+// Route handling component
 const AppRoutes = () => {
-  const { user, loading, userRole } = useAuth();
+  const { user, loading, isAdmin, roles } = useAuth();
   const location = useLocation();
   
-  // Detectar rutas de admin
+  // Detect admin routes
   const isAdminRoute = location.pathname.startsWith('/admin');
   
-  // Log para depuración
+  // Debug logging
   useEffect(() => {
     console.log(`[Router] Route changed to: ${location.pathname}`);
-    console.log(`[Router] Current auth state - User: ${user?.id}, Role: ${userRole}`);
-  }, [location.pathname, user, userRole]);
+    console.log(`[Router] Current auth state - User: ${user?.id || 'none'}`);
+    console.log(`[Router] Is admin: ${isAdmin}, Roles: ${roles.join(', ')}`);
+  }, [location.pathname, user, isAdmin, roles]);
   
-  // Mostrar loader durante la verificación de autenticación
+  // Show loader during authentication verification
   if (loading && !isAdminRoute) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
@@ -60,7 +61,7 @@ const AppRoutes = () => {
   
   return (
     <>
-      {/* Solo mostrar header en rutas no-admin */}
+      {/* Only show header on non-admin routes */}
       {!isAdminRoute && (
         <>
           <Header />
@@ -69,12 +70,12 @@ const AppRoutes = () => {
       )}
       
       <Routes>
-        {/* Rutas públicas */}
+        {/* Public routes */}
         <Route path="/" element={<Index />} />
         <Route path="/listings" element={<Listings />} />
         <Route path="/listings/:id" element={<ListingDetail />} />
         
-        {/* Rutas de Admin - Protegidas por AdminRoute */}
+        {/* Admin routes - protected by AdminRoute */}
         <Route path="/admin/dashboard" element={
           <AdminRoute>
             <AdminDashboard />
@@ -91,7 +92,7 @@ const AppRoutes = () => {
           </AdminRoute>
         } />
         
-        {/* Rutas protegidas - requieren autenticación */}
+        {/* Protected routes - require authentication */}
         <Route path="/broker/dashboard" element={
           user ? <BrokerDashboard /> : <Navigate to="/login" state={{ from: location }} replace />
         } />
@@ -102,10 +103,10 @@ const AppRoutes = () => {
           user ? (ListingEdit ? <ListingEdit /> : <div>Loading editor...</div>) : <Navigate to="/login" state={{ from: location }} replace />
         } />
         
-        {/* Rutas de autenticación */}
+        {/* Authentication routes */}
         <Route path="/login" element={
           user ? (
-            userRole === 'ADMIN' ? <Navigate to="/admin/dashboard" replace /> : <Navigate to="/" replace />
+            isAdmin ? <Navigate to="/admin/dashboard" replace /> : <Navigate to="/" replace />
           ) : <Login />
         } />
         <Route path="/register" element={
@@ -115,13 +116,13 @@ const AppRoutes = () => {
           user ? <Navigate to="/" replace /> : <ForgotPassword />
         } />
         
-        {/* Rutas de procesamiento de autenticación */}
+        {/* Auth processing routes */}
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/auth/success" element={<AuthenticationSuccess />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/verify-email" element={<EmailVerification />} />
 
-        {/* Ruta 404 */}
+        {/* 404 route */}
         <Route path="*" element={<NotFound />} />
       </Routes>
     </>

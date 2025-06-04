@@ -4,7 +4,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/hooks/useAuth';
 import { 
   Tabs, 
   TabsList, 
@@ -54,7 +53,7 @@ import {
 // Status type for listings
 type ListingStatus = 'pending' | 'approved' | 'rejected' | 'all';
 
-// Listing type
+// Updated Listing type matching your actual database schema
 interface Listing {
   id: string;
   title: string;
@@ -66,6 +65,12 @@ interface Listing {
   state: string;
   property_type: string;
   user_id: string;
+  description?: string;
+  address?: string;
+  num_sites?: number;
+  occupancy_rate?: number;
+  annual_revenue?: number;
+  cap_rate?: number;
 }
 
 const statusOptions = [
@@ -103,12 +108,12 @@ const AdminDashboard = () => {
     try {
       console.log('[Admin] Fetching listings from Supabase...');
       
-      // Consulta básica para obtener todos los listados sin filtros adicionales
+      // Basic query with only the fields we need
       let query = supabase
         .from('listings')
-        .select('*');
+        .select('id, title, price, status, created_at, rejection_reason, city, state, property_type, user_id, description, address');
       
-      // Solo aplicar filtro si no es "all"
+      // Only apply filter if not "all"
       if (activeTab !== 'all') {
         query = query.eq('status', activeTab);
       }
@@ -122,6 +127,7 @@ const AdminDashboard = () => {
       
       console.log(`[Admin] Successfully fetched ${data?.length || 0} listings`);
       
+      // Create empty arrays if no data
       if (!data || data.length === 0) {
         setListings([]);
         setFilteredListings([]);
@@ -134,7 +140,7 @@ const AdminDashboard = () => {
         return;
       }
       
-      // Transform data to match our interface
+      // Map data to our interface
       const processedListings: Listing[] = data.map(item => ({
         id: String(item.id),
         title: item.title || 'Untitled',
@@ -145,10 +151,12 @@ const AdminDashboard = () => {
         city: item.city || 'Unknown',
         state: item.state || 'Unknown',
         property_type: item.property_type || 'RV Park',
-        user_id: item.user_id
+        user_id: item.user_id,
+        description: item.description,
+        address: item.address
       }));
       
-      // Update state
+      // Set state
       setListings(processedListings);
       
       // Filter based on active tab
@@ -172,6 +180,16 @@ const AdminDashboard = () => {
         title: "Error",
         description: "Failed to fetch listings from database",
         variant: "destructive",
+      });
+      
+      // Reset state on error
+      setListings([]);
+      setFilteredListings([]);
+      setStatusCounts({
+        all: 0,
+        pending: 0,
+        approved: 0,
+        rejected: 0
       });
     } finally {
       setIsLoading(false);
@@ -206,7 +224,8 @@ const AdminDashboard = () => {
       listing.title?.toLowerCase().includes(query) ||
       listing.city?.toLowerCase().includes(query) ||
       listing.state?.toLowerCase().includes(query) ||
-      listing.property_type?.toLowerCase().includes(query)
+      listing.property_type?.toLowerCase().includes(query) ||
+      listing.description?.toLowerCase().includes(query)
     );
     
     setFilteredListings(searchFilteredListings);
