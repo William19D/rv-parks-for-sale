@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { ListingCard } from "@/components/listings/ListingCard";
-import { getFeaturedListings, Listing } from "@/data/mockListings";
+import { fetchFeaturedApprovedListings, Listing } from "@/services/listingService";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { 
@@ -24,7 +24,7 @@ const Index = () => {
       setIsLoading(true);
       try {
         // Esta función ya está filtrando por status 'approved' en la API
-        const approvedFeaturedListings = await getFeaturedListings();
+        const approvedFeaturedListings = await fetchFeaturedApprovedListings();
         setFeaturedListings(approvedFeaturedListings);
       } catch (error) {
         // No mostramos detalles del error que podrían contener información sensible

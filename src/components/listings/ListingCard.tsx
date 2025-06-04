@@ -1,9 +1,10 @@
+
 import { useState } from "react";
-import { Listing } from "@/data/mockListings";
+import { Listing } from "@/services/listingService";
 import { formatCurrency } from "@/lib/utils"; // Removed formatDate from import
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Heart, Calendar, ChevronRight, Star, DollarSign, Users, Percent } from "lucide-react";
+import { MapPin, Heart, Calendar, ChevronRight, Star, DollarSign, Users, Percent, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
@@ -27,6 +28,15 @@ const formatDate = (date: Date): string => {
   }
 };
 
+// Helper function to check if listing is new (published less than 1 week ago)
+const isListingNew = (createdAt: string): boolean => {
+  const now = new Date();
+  const listingDate = new Date(createdAt);
+  const diffTime = Math.abs(now.getTime() - listingDate.getTime());
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays < 7;
+};
+
 export const ListingCard = ({ listing, className }: ListingCardProps) => {
   const [isFavorite, setIsFavorite] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -45,6 +55,10 @@ export const ListingCard = ({ listing, className }: ListingCardProps) => {
     e.stopPropagation();
     setCurrentImageIndex((prev) => (prev + 1) % listing.images.length);
   };
+
+  // Determine which badge to show
+  const showNewestBadge = isListingNew(listing.createdAt);
+  const showFeaturedBadge = listing.featured && !showNewestBadge;
 
   return (
     <Link to={`/listings/${listing.id}`} className="block h-full">
@@ -106,8 +120,14 @@ export const ListingCard = ({ listing, className }: ListingCardProps) => {
             )}
           </div>
 
-          {/* Badge for featured listings */}
-          {listing.featured && (
+          {/* Badge for newest or featured listings */}
+          {showNewestBadge && (
+            <Badge className="absolute top-2 left-2 bg-green-500 text-white font-medium">
+              <Sparkles className="h-3 w-3 mr-1 fill-white" /> Newest
+            </Badge>
+          )}
+          
+          {showFeaturedBadge && (
             <Badge className="absolute top-2 left-2 bg-[#f74f4f] text-white font-medium">
               <Star className="h-3 w-3 mr-1 fill-white" /> Featured
             </Badge>
