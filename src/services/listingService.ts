@@ -30,7 +30,7 @@ export interface Listing {
   pdfUrl?: string;
   createdAt: string;
   featured: boolean;
-  status: string; // For approval status: 'approved', 'pending', 'rejected', etc.
+  status?: string; // Made optional to match mock data interface
 }
 
 // Filter interface for type safety when applying filters

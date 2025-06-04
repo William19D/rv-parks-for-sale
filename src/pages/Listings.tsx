@@ -64,8 +64,8 @@ const Listings = () => {
     loadApprovedListings();
   }, [filters]);
 
-  // Handle filter changes
-  const handleFiltersChange = (newFilters: FilterType) => {
+  // Handle filter changes - changed from onFiltersChange to onFilterChange
+  const handleFilterChange = (newFilters: FilterType) => {
     console.log('[Listings] Filters changed:', newFilters);
     setFilters(newFilters);
     
@@ -112,7 +112,7 @@ const Listings = () => {
               {/* Filters Sidebar */}
               <aside className="lg:w-80 flex-shrink-0">
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 sticky top-4">
-                  <ListingFilters onFiltersChange={handleFiltersChange} initialFilters={filters} />
+                  <ListingFilters onFilterChange={handleFilterChange} initialFilters={filters} />
                 </div>
               </aside>
 
