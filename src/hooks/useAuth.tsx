@@ -34,121 +34,186 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userRole, setUserRole] = useState<UserRole>(null);
   const { toast } = useToast();
 
-  // Función para obtener el rol con logs detallados para depuración
-  const fetchUserRole = async (userId: string): Promise<UserRole> => {
-    if (!userId) {
-      console.log('[DEBUG-ROLE] Error: No userId provided to fetchUserRole');
+  // Verificar si un email existe en la tabla admins (solo comprueba existencia)
+  const checkAdminEmail = async (email: string) => {
+    try {
+      console.log(`[Auth] Verificando si ${email} existe en tabla admins`);
+      const { data, error } = await supabase
+        .from('admins') // CORREGIDO: Usar 'admins' en plural
+        .select('*')
+        .eq('email', email.toLowerCase())
+        .single();
+      
+      if (error) {
+        console.log(`[Auth] Email no encontrado en tabla admins:`, error.message);
+        return null;
+      }
+      
+      console.log(`[Auth] Admin encontrado:`, data);
+      return data;
+    } catch (error) {
+      console.error(`[Auth] Error verificando admin:`, error);
       return null;
     }
-    
-    console.log(`[DEBUG-ROLE] Starting role fetch for user: ${userId}`);
-    console.log(`[DEBUG-ROLE] Current user email: ${user?.email}`);
-    
-    // CASO ESPECIAL - DEPURACIÓN WILLIAM19D
-    if (user?.email?.toLowerCase().includes('william19d')) {
-      console.log('[DEBUG-ROLE] ⭐ WILLIAM19D DETECTED BY EMAIL ⭐');
-      console.log('[DEBUG-ROLE] Bypassing database query, setting ADMIN role directly');
-      return 'ADMIN';
+  };
+  
+  // Autenticar usuario como admin - Versión simplificada y mejorada
+  const authenticateAdmin = async (email: string, password: string) => {
+    try {
+      console.log(`[Auth] Autenticando admin con email: ${email}`);
+      
+      // IMPORTANTE: Limpiar cualquier bypass previo
+      localStorage.removeItem('bypassAuth');
+      
+      // VERIFICAR PRIMERO LA EXISTENCIA DEL EMAIL
+      const { data: adminExists, error: existsError } = await supabase
+        .from('admins') // CORREGIDO: Usar 'admins' en plural
+        .select('*')
+        .eq('email', email.toLowerCase())
+        .single();
+      
+      if (existsError || !adminExists) {
+        console.log(`[Auth] Admin no encontrado:`, existsError?.message || 'No existe');
+        return { error: new Error('Email no registrado como administrador'), data: null };
+      }
+      
+      // AHORA VERIFICAR LA CONTRASEÑA
+      if (adminExists.password !== password) {
+        console.log(`[Auth] Contraseña incorrecta para admin`);
+        return { error: new Error('Contraseña incorrecta'), data: null };
+      }
+      
+      // Autenticación correcta
+      console.log(`[Auth] Admin autenticado correctamente:`, adminExists);
+      
+      // Crear un objeto "user" para mantener compatibilidad con la interfaz
+      const adminUser = {
+        id: adminExists.id,
+        email: adminExists.email,
+        user_metadata: { name: adminExists.name || 'Admin' },
+        app_metadata: { role: 'ADMIN' },
+      } as unknown as User;
+      
+      // Guardar datos en localStorage para persistencia
+      localStorage.setItem('adminUser', JSON.stringify({
+        id: adminExists.id,
+        email: adminExists.email,
+        name: adminExists.name || 'Admin'
+      }));
+      localStorage.setItem('userRole', 'ADMIN');
+      
+      return { error: null, data: adminUser };
+    } catch (error) {
+      console.error(`[Auth] Error en authenticateAdmin:`, error);
+      return { error, data: null };
     }
+  };
+  
+  // Obtener rol de usuario normal
+  const fetchUserRole = async (userId: string): Promise<UserRole> => {
+    if (!userId) return null;
     
     try {
-      // 1. Intentar obtener asignaciones de roles - Mostrar query completa
-      console.log(`[DEBUG-ROLE] Querying user_role_assignments for user_id=${userId}`);
+      console.log(`[Auth] Obteniendo rol para usuario: ${userId}`);
       
-      const { data: roleAssignments, error: roleError } = await supabase
+      // Verificar roles en tabla user_role_assignments
+      const { data: roleAssignments, error } = await supabase
         .from('user_role_assignments')
-        .select('*')
+        .select('role_id')
         .eq('user_id', userId);
       
-      // Mostrar detalladamente el resultado o error
-      if (roleError) {
-        console.error('[DEBUG-ROLE] ❌ Error fetching role assignments:', roleError);
-        console.error('[DEBUG-ROLE] Error details:', JSON.stringify(roleError));
-      } else {
-        console.log(`[DEBUG-ROLE] Received ${roleAssignments?.length || 0} role assignments`);
-        console.log('[DEBUG-ROLE] Raw data:', JSON.stringify(roleAssignments));
+      if (error) {
+        console.error('[Auth] Error obteniendo asignaciones de rol:', error);
+        return 'USER';
       }
       
-      // 2. Si encontramos asignaciones, verificar cada una
-      if (roleAssignments && roleAssignments.length > 0) {
-        // Registro detallado de cada asignación
-        roleAssignments.forEach((assignment, idx) => {
-          console.log(`[DEBUG-ROLE] Assignment #${idx+1}:`, JSON.stringify(assignment));
-          console.log(`[DEBUG-ROLE] - role_id: ${assignment.role_id} (type: ${typeof assignment.role_id})`);
-        });
-        
-        // Verificar role_id=2 (ADMIN)
-        const hasAdminRole = roleAssignments.some(ra => {
-          const isAdmin = ra.role_id === 2;
-          console.log(`[DEBUG-ROLE] Checking if role_id ${ra.role_id} === 2: ${isAdmin}`);
-          return isAdmin;
-        });
-        
-        if (hasAdminRole) {
-          console.log('[DEBUG-ROLE] ✅ ADMIN role found (role_id=2)');
-          return 'ADMIN';
-        }
-        
-        // Verificar role_id=3 (BROKER)
-        const hasBrokerRole = roleAssignments.some(ra => ra.role_id === 3);
-        if (hasBrokerRole) {
-          console.log('[DEBUG-ROLE] ✅ BROKER role found (role_id=3)');
-          return 'BROKER';
-        }
-        
-        console.log('[DEBUG-ROLE] No special role found in assignments');
-      } else {
-        console.log('[DEBUG-ROLE] No role assignments found for this user');
+      if (!roleAssignments || roleAssignments.length === 0) {
+        console.log('[Auth] No se encontraron asignaciones de rol');
+        return 'USER';
       }
       
-      // 3. Verificar tablas relacionadas como último recurso
-      console.log('[DEBUG-ROLE] Attempting direct query to user_roles table...');
-      try {
-        const { data: rolesData } = await supabase.from('user_roles').select('*');
-        console.log('[DEBUG-ROLE] Available roles in system:', JSON.stringify(rolesData));
-      } catch (e) {
-        console.error('[DEBUG-ROLE] Error querying user_roles table:', e);
+      // Verificar si tiene rol admin (role_id = 2)
+      if (roleAssignments.some(ra => ra.role_id === 2)) {
+        console.log('[Auth] Usuario tiene rol ADMIN (role_id = 2)');
+        return 'ADMIN';
       }
       
-      // 4. Fallback a USER como valor predeterminado seguro
-      console.log('[DEBUG-ROLE] Defaulting to USER role');
+      // Verificar si tiene rol broker (role_id = 3)
+      if (roleAssignments.some(ra => ra.role_id === 3)) {
+        console.log('[Auth] Usuario tiene rol BROKER (role_id = 3)');
+        return 'BROKER';
+      }
+      
+      console.log('[Auth] Usuario tiene rol USER por defecto');
       return 'USER';
-      
     } catch (error) {
-      console.error('[DEBUG-ROLE] ❌ Unexpected error in fetchUserRole:', error);
-      console.error('[DEBUG-ROLE] Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
-      
-      // Último recurso - verificar email
-      if (user?.email) {
-        const email = user.email.toLowerCase();
-        if (email.includes('william19d') || email.includes('admin')) {
-          console.log('[DEBUG-ROLE] ⭐ Admin detected by email fallback');
-          return 'ADMIN';
-        }
-      }
-      
+      console.error('[Auth] Error en fetchUserRole:', error);
       return 'USER';
     }
   };
-
-  // Initialize auth state
+  
+  // Inicializar estado de autenticación
   useEffect(() => {
-    console.log('[DEBUG-AUTH] Auth provider initializing...');
+    console.log('[Auth] Inicializando proveedor de autenticación');
     let isMounted = true;
     
     const setData = async () => {
       try {
-        console.log('[DEBUG-AUTH] Checking for existing session...');
+        // Verificar primero si hay una sesión de admin en localStorage
+        const adminData = localStorage.getItem('adminUser');
+        if (adminData) {
+          try {
+            const admin = JSON.parse(adminData);
+            console.log('[Auth] Sesión de admin encontrada en localStorage:', admin.email);
+            
+            if (isMounted) {
+              // Comprobar que sigue existiendo en la base de datos
+              const { data: adminStillExists } = await supabase
+                .from('admins') // CORREGIDO: Usar 'admins' en plural
+                .select('*')
+                .eq('email', admin.email)
+                .single();
+              
+              if (!adminStillExists) {
+                console.log('[Auth] El admin ya no existe en la base de datos');
+                localStorage.removeItem('adminUser');
+                localStorage.removeItem('userRole');
+                setLoading(false);
+                return;
+              }
+              
+              // Crear un objeto de usuario para mantener compatibilidad
+              const simulatedUser = {
+                id: admin.id,
+                email: admin.email,
+                user_metadata: { name: admin.name || 'Admin' },
+                app_metadata: { role: 'ADMIN' },
+                role: 'admin'
+              } as unknown as User;
+              
+              setUser(simulatedUser);
+              setUserRole('ADMIN');
+              setLoading(false);
+            }
+            return;
+          } catch (e) {
+            console.error('[Auth] Error parseando datos de admin:', e);
+            localStorage.removeItem('adminUser');
+          }
+        }
+        
+        // Si no hay sesión de admin, verificar sesión normal de Supabase
+        console.log('[Auth] Verificando sesión normal de Supabase');
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('[DEBUG-AUTH] Error getting session:', error);
+          console.error('[Auth] Error obteniendo sesión:', error);
           if (isMounted) setLoading(false);
           return;
         }
         
         if (!session) {
-          console.log('[DEBUG-AUTH] No session found, user is not authenticated');
+          console.log('[Auth] No se encontró sesión');
           if (isMounted) {
             setSession(null);
             setUser(null);
@@ -158,44 +223,60 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
         
-        // Session found - user is authenticated
-        console.log('[DEBUG-AUTH] Session found for user:', session.user.id);
-        console.log('[DEBUG-AUTH] User email:', session.user.email);
+        console.log('[Auth] Sesión encontrada para usuario:', session.user.id);
         
-        if (isMounted) {
-          setSession(session);
-          setUser(session.user);
+        // Verificar si el usuario es admin (comprobando en tabla admins)
+        const adminRecord = await checkAdminEmail(session.user.email || '');
+        
+        if (adminRecord) {
+          console.log('[Auth] Usuario encontrado en tabla admins:', adminRecord.email);
           
-          // WILLIAM19D SPECIAL CASE - CHECK IMMEDIATELY BY EMAIL
-          if (session.user.email?.toLowerCase().includes('william19d')) {
-            console.log('[DEBUG-AUTH] ⭐ WILLIAM19D detected by email, setting ADMIN role directly');
+          if (isMounted) {
+            setUser(session.user);
+            setSession(session);
             setUserRole('ADMIN');
-          } else {
-            // For other users, fetch role normally
-            console.log('[DEBUG-AUTH] Fetching role for regular user');
-            const role = await fetchUserRole(session.user.id);
-            console.log('[DEBUG-AUTH] Role determined:', role);
-            setUserRole(role);
+            
+            // Guardar en localStorage para futuras verificaciones
+            localStorage.setItem('adminUser', JSON.stringify({
+              id: adminRecord.id,
+              email: adminRecord.email,
+              name: adminRecord.name || 'Admin'
+            }));
+            localStorage.setItem('userRole', 'ADMIN');
+            
+            setLoading(false);
           }
+          return;
+        }
+        
+        // Si no es admin, continuar con la sesión normal
+        if (isMounted) {
+          setUser(session.user);
+          setSession(session);
+          
+          // Obtener rol de usuario normal
+          const role = await fetchUserRole(session.user.id);
+          console.log('[Auth] Rol obtenido:', role);
+          setUserRole(role);
           
           setLoading(false);
         }
       } catch (e) {
-        console.error('[DEBUG-AUTH] Error in setData:', e);
+        console.error('[Auth] Error en setData:', e);
         if (isMounted) setLoading(false);
       }
     };
     
     setData();
     
-    // Auth state change listener
+    // Listener para cambios en la autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('[DEBUG-AUTH] Auth state changed. Event:', event);
+        console.log('[Auth] Cambio en estado de autenticación:', event);
         
         if (isMounted) {
           if (!session) {
-            console.log('[DEBUG-AUTH] No session in auth change event (logged out)');
+            console.log('[Auth] No hay sesión en evento de cambio');
             setSession(null);
             setUser(null);
             setUserRole(null);
@@ -203,17 +284,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             return;
           }
           
-          console.log('[DEBUG-AUTH] New session in auth change event for user:', session.user.id);
-          setSession(session);
-          setUser(session.user);
+          console.log('[Auth] Nueva sesión en evento de cambio:', session.user.id);
           
-          // WILLIAM19D SPECIAL CASE
-          if (session.user.email?.toLowerCase().includes('william19d')) {
-            console.log('[DEBUG-AUTH] ⭐ WILLIAM19D detected in auth change, setting ADMIN role');
+          // Verificar si el usuario es admin
+          const adminRecord = await checkAdminEmail(session.user.email || '');
+          
+          if (adminRecord) {
+            console.log('[Auth] Usuario es admin en evento de cambio');
+            setUser(session.user);
+            setSession(session);
             setUserRole('ADMIN');
+            localStorage.setItem('userRole', 'ADMIN');
+            
+            // Guardar en localStorage
+            localStorage.setItem('adminUser', JSON.stringify({
+              id: adminRecord.id,
+              email: adminRecord.email,
+              name: adminRecord.name || 'Admin'
+            }));
           } else {
+            // Usuario normal
+            setUser(session.user);
+            setSession(session);
+            
             const role = await fetchUserRole(session.user.id);
-            console.log('[DEBUG-AUTH] Role after auth change:', role);
+            console.log('[Auth] Rol después de cambio:', role);
             setUserRole(role);
           }
           
@@ -222,129 +317,124 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     );
     
-    // Safety timeout to prevent infinite loading
+    // Safety timeout para prevenir carga infinita
     const safetyTimeout = setTimeout(() => {
       if (isMounted && loading) {
-        console.warn('[DEBUG-AUTH] Safety timeout triggered. Force setting loading to false.');
+        console.warn('[Auth] Safety timeout triggered, forzando loading a false');
         setLoading(false);
       }
     }, 5000);
-
+    
     return () => {
-      console.log('[DEBUG-AUTH] Cleaning up auth provider...');
+      console.log('[Auth] Limpiando proveedor de autenticación');
       isMounted = false;
       clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   }, []);
-
-  // Enhanced sign in function with better debugging
+  
+  // FUNCIÓN CORREGIDA: Iniciar sesión (primero verificando en tabla admins)
   const signIn = async (email: string, password: string) => {
     try {
-      console.log(`[DEBUG-AUTH] Attempting login with email: ${email}`);
+      console.log(`[Auth] Iniciando proceso de login para: ${email}`);
       
-      // DETECT WILLIAM19D EARLY
-      const isWilliamAccount = email.toLowerCase().includes('william19d');
-      if (isWilliamAccount) {
-        console.log('[DEBUG-AUTH] ⭐ WILLIAM19D login attempt detected');
-      }
+      // Limpiar cualquier dato previo
+      localStorage.removeItem('adminUser');
+      localStorage.removeItem('userRole');
+      localStorage.removeItem('bypassAuth');
       
-      const { error, data } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      // PASO 1: Verificar si el email existe en la tabla admins
+      console.log(`[Auth] Verificando si existe en tabla admins: ${email}`);
+      const { data: adminExists } = await supabase
+        .from('admins') // CORREGIDO: Usar 'admins' en plural
+        .select('email')
+        .eq('email', email.toLowerCase());
       
-      if (error) {
-        console.error('[DEBUG-AUTH] Sign in error:', error);
-        return { error };
-      }
-      
-      if (!data.user) {
-        console.error('[DEBUG-AUTH] No user data returned from sign in');
-        return { error: new Error('No user data returned from sign in') };
-      }
-      
-      console.log(`[DEBUG-AUTH] Successfully authenticated user: ${data.user.id}`);
-      console.log('[DEBUG-AUTH] User email:', data.user.email);
-      
-      // Update state
-      setUser(data.user);
-      setSession(data.session);
-      
-      // WILLIAM19D SPECIAL HANDLING
-      if (isWilliamAccount) {
-        console.log('[DEBUG-AUTH] ⭐ Setting ADMIN role directly for WILLIAM19D');
-        setUserRole('ADMIN');
-        localStorage.setItem('userRole', 'ADMIN'); // Backup in localStorage
-        return { error: null };
-      }
-      
-      // For other users, fetch role
-      try {
-        console.log('[DEBUG-AUTH] Fetching role for regular user after login');
-        const { data: roleData, error: roleError } = await supabase
-          .from('user_role_assignments')
-          .select('role_id')
-          .eq('user_id', data.user.id);
+      // Si el email existe en tabla admins, intentar autenticación admin
+      if (adminExists && adminExists.length > 0) {
+        console.log(`[Auth] Email encontrado en tabla admins, autenticando...`);
+        const { error: adminError, data: adminData } = await authenticateAdmin(email, password);
         
-        console.log('[DEBUG-AUTH] Role query result:', roleData, roleError);
-        
-        if (roleError) {
-          console.error('[DEBUG-AUTH] Error fetching role after login:', roleError);
-          setUserRole('USER');
-        } else if (roleData && roleData.length > 0) {
-          console.log('[DEBUG-AUTH] Processing role assignments:', roleData);
-          
-          if (roleData.some(r => r.role_id === 2)) {
-            console.log('[DEBUG-AUTH] Setting ADMIN role');
-            setUserRole('ADMIN');
-          } else if (roleData.some(r => r.role_id === 3)) {
-            console.log('[DEBUG-AUTH] Setting BROKER role');
-            setUserRole('BROKER');
-          } else {
-            console.log('[DEBUG-AUTH] Setting USER role');
-            setUserRole('USER');
-          }
+        if (!adminError && adminData) {
+          console.log(`[Auth] Login exitoso como admin`);
+          setUser(adminData);
+          setUserRole('ADMIN');
+          return { error: null };
         } else {
-          console.log('[DEBUG-AUTH] No role assignments found, setting USER role');
-          setUserRole('USER');
+          console.error('[Auth] Error autenticando admin:', adminError);
+          return { error: adminError };
         }
-      } catch (roleError) {
-        console.error('[DEBUG-AUTH] Exception in role processing:', roleError);
-        setUserRole('USER');
       }
       
-      return { error: null };
+      // PASO 2: Si no es admin, intentar autenticación normal con Supabase
+      console.log(`[Auth] No es admin, intentando auth normal de Supabase`);
+      
+      try {
+        const { error: supabaseError, data } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        
+        if (supabaseError) {
+          console.error('[Auth] Error autenticación Supabase:', supabaseError);
+          return { error: supabaseError };
+        }
+        
+        if (!data || !data.user) {
+          console.error('[Auth] No se recibieron datos de usuario');
+          return { error: new Error('No se recibieron datos de usuario') };
+        }
+        
+        console.log(`[Auth] Usuario autenticado exitosamente:`, data.user);
+        setUser(data.user);
+        setSession(data.session);
+        
+        const role = await fetchUserRole(data.user.id);
+        console.log('[Auth] Rol asignado:', role);
+        setUserRole(role);
+        
+        return { error: null };
+      } catch (authError) {
+        console.error('[Auth] Error inesperado en auth Supabase:', authError);
+        return { error: authError };
+      }
     } catch (error: any) {
-      console.error('[DEBUG-AUTH] Error in signIn function:', error);
+      console.error('[Auth] Error general en signIn:', error);
       return { error };
     }
   };
-
-  // Sign up with default role assignment
+  
+  // Función de registro (solo para usuarios normales)
   const signUp = async (email: string, password: string) => {
     try {
-      console.log(`[DEBUG-AUTH] Attempting signup for: ${email}`);
+      // Verificar primero si el email existe en tabla admins
+      const adminData = await checkAdminEmail(email);
       
+      if (adminData) {
+        return {
+          error: new Error('Este correo ya está registrado como administrador'),
+          data: null
+        };
+      }
+      
+      // Proceder con registro normal
       const { error, data } = await supabase.auth.signUp({
         email,
         password,
       });
       
       if (error) {
-        console.error('[DEBUG-AUTH] Signup error:', error);
-        throw error;
+        return { error, data: null };
       }
       
-      console.log('[DEBUG-AUTH] Signup successful, creating role assignment');
+      console.log('[Auth] Registro exitoso para:', email);
       
-      // Create role assignment for new user with default USER role
+      // Asignar rol USER por defecto
       if (data.user) {
-        // Default to role_id 1 (USER)
-        let userRoleId = 1;
+        // Determinar el role_id para USER
+        let userRoleId = 1; // Default
         
         try {
-          // Attempt to verify the correct USER role ID from user_roles table
           const { data: roleData } = await supabase
             .from('user_roles')
             .select('id')
@@ -353,13 +443,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             
           if (roleData) {
             userRoleId = roleData.id;
-            console.log('[DEBUG-AUTH] Found USER role ID:', userRoleId);
+            console.log('[Auth] ID de rol USER encontrado:', userRoleId);
           }
         } catch (e) {
-          console.error('[DEBUG-AUTH] Error finding USER role ID, using default 1:', e);
+          console.error('[Auth] Error encontrando ID de rol USER:', e);
         }
         
-        // Insert role assignment
+        // Insertar asignación de rol
         const { error: roleError } = await supabase
           .from('user_role_assignments')
           .insert([{
@@ -368,76 +458,75 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }]);
           
         if (roleError) {
-          console.error('[DEBUG-AUTH] Error assigning default role:', roleError);
+          console.error('[Auth] Error asignando rol predeterminado:', roleError);
         } else {
-          console.log(`[DEBUG-AUTH] Successfully assigned role_id ${userRoleId} to user ${data.user.id}`);
+          console.log(`[Auth] Rol ${userRoleId} asignado a usuario ${data.user.id}`);
         }
       }
       
       return { error: null, data };
     } catch (error: any) {
+      console.error('[Auth] Error en signUp:', error);
       return { error, data: null };
     }
   };
-
-  // Enhanced sign out with thorough cleanup
+  
+  // Cerrar sesión (funciona para admins y usuarios normales)
   const signOut = async () => {
     try {
-      console.log('[DEBUG-AUTH] Starting sign out process...');
+      console.log('[Auth] Iniciando proceso de cierre de sesión');
       
-      // Clear state first
+      // Limpiar estado
       setUser(null);
       setSession(null);
       setUserRole(null);
       
-      // Clear localStorage before signing out from Supabase
-      console.log('[DEBUG-AUTH] Clearing localStorage...');
-      localStorage.removeItem('supabase.auth.token');
-      localStorage.removeItem('supabase.auth.expires_at');
-      localStorage.removeItem('supabase.auth.refresh_token');
+      // Limpiar localStorage
+      localStorage.removeItem('adminUser');
       localStorage.removeItem('userRole');
-      localStorage.removeItem('bypassAuth');
-      localStorage.clear(); // For good measure
+      localStorage.clear();
       
-      // Sign out from Supabase
-      console.log('[DEBUG-AUTH] Calling Supabase signOut...');
+      // Para usuarios normales, cerrar sesión en Supabase
       await supabase.auth.signOut({ scope: 'global' });
       
-      // Force reload the page to ensure complete reset
-      console.log('[DEBUG-AUTH] Reloading page to complete sign out...');
+      // Forzar recarga para limpiar completamente el estado
       window.location.href = '/';
       
-      console.log('[DEBUG-AUTH] Sign out process complete');
+      console.log('[Auth] Sesión cerrada correctamente');
     } catch (error) {
-      console.error('[DEBUG-AUTH] Error during sign out:', error);
-      // Even if error occurs, try to clean up
+      console.error('[Auth] Error en signOut:', error);
       localStorage.clear();
       window.location.href = '/';
     }
   };
-
-  // Reset password
+  
+  // Restablecer contraseña (solo para usuarios normales)
   const resetPassword = async (email: string) => {
     try {
-      console.log(`[DEBUG-AUTH] Sending password reset to: ${email}`);
+      // Verificar si es admin
+      const adminData = await checkAdminEmail(email);
       
+      if (adminData) {
+        return {
+          error: new Error('Los administradores deben contactar al soporte técnico para restablecer su contraseña')
+        };
+      }
+      
+      // Proceso normal para usuarios
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       
       if (error) {
-        console.error('[DEBUG-AUTH] Password reset error:', error);
         return { error };
       }
       
-      console.log('[DEBUG-AUTH] Password reset email sent successfully');
       return { error: null };
     } catch (error: any) {
-      console.error('[DEBUG-AUTH] Error in resetPassword:', error);
       return { error };
     }
   };
-
+  
   const value = {
     user,
     session,
@@ -448,7 +537,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     signOut,
     resetPassword,
   };
-
+  
   return (
     <AuthContext.Provider value={value}>
       {children}
