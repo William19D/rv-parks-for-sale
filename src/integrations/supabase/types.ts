@@ -9,6 +9,30 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      admins: {
+        Row: {
+          created_at: string | null
+          email: string
+          id: string
+          name: string | null
+          password: string
+        }
+        Insert: {
+          created_at?: string | null
+          email: string
+          id?: string
+          name?: string | null
+          password: string
+        }
+        Update: {
+          created_at?: string | null
+          email?: string
+          id?: string
+          name?: string | null
+          password?: string
+        }
+        Relationships: []
+      }
       listing_images: {
         Row: {
           created_at: string | null
@@ -162,6 +186,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      authenticate_admin: {
+        Args: { admin_email: string; admin_password: string }
+        Returns: string
+      }
       check_user_role: {
         Args: { user_id_param: string; role_id_param: number }
         Returns: boolean
@@ -172,6 +200,10 @@ export type Database = {
       }
       is_admin: {
         Args: { user_id_param: string }
+        Returns: boolean
+      }
+      is_superadmin: {
+        Args: Record<PropertyKey, never>
         Returns: boolean
       }
       user_has_role: {

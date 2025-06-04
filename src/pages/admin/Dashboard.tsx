@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/hooks/useAuth'; // Importamos el hook
+import { useAuth } from '@/hooks/useAuth';
 import { 
   Tabs, 
   TabsContent, 
@@ -62,16 +62,12 @@ interface Listing {
   title: string;
   price: number;
   status: string;
-  createdAt: string;
+  created_at: string;
   rejection_reason?: string;
-  location: {
-    city: string;
-    state: string;
-  };
-  broker: {
-    name: string;
-    email: string;
-  };
+  city: string;
+  state: string;
+  property_type: string;
+  user_id: string;
 }
 
 const statusOptions = [
@@ -99,162 +95,116 @@ const AdminDashboard = () => {
     rejected: 0
   });
   
-  // Obtener información del usuario actual
   const { user, userRole } = useAuth();
   const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Admin';
   
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Verificar conteos de listados - Corregido el error de TypeScript
-  const checkListingCounts = async () => {
-    try {
-      // Enfoque alternativo usando consultas separadas para evitar el error de TypeScript
-      const { count: totalCount } = await supabase
-        .from('listings')
-        .select('*', { count: 'exact', head: true });
-        
-      const { count: pendingCount } = await supabase
-        .from('listings')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending');
-        
-      const { count: approvedCount } = await supabase
-        .from('listings')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'approved');
-        
-      const { count: rejectedCount } = await supabase
-        .from('listings')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'rejected');
-      
-      console.log('[Admin] Conteos alternativos:', {
-        total: totalCount,
-        pending: pendingCount,
-        approved: approvedCount,
-        rejected: rejectedCount
-      });
-    } catch (err) {
-      console.error('Error verificando conteos:', err);
-    }
-  };
-
-  // Allow access without strict admin checks
+  // Fetch all listings from Supabase
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        // Get session but don't block access if not authenticated
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.user) {
-          console.log("User authenticated, setting ADMIN role in localStorage");
-          localStorage.setItem('userRole', 'ADMIN');
-        } else {
-          console.log("No session found, will proceed anyway");
-          localStorage.setItem('bypassAuth', 'true');
-          localStorage.setItem('userRole', 'ADMIN'); // Asegurarnos de que tiene rol de admin
-        }
-      } catch (error) {
-        console.error("Auth check error:", error);
-      }
-    };
-    
-    checkAuth();
-    // No llamamos checkListingCounts() aquí porque puede causar error si la función RPC no existe
-  }, []);
-
-  // Fetch listings - VERSIÓN MEJORADA
-  useEffect(() => {
-    const fetchListings = async () => {
+    const fetchAllListings = async () => {
       setIsLoading(true);
       
       try {
-        // Consulta que garantiza obtener todos los listados
-        let query = supabase
+        console.log('[Admin] Fetching all listings from Supabase...');
+        
+        const { data, error } = await supabase
           .from('listings')
           .select('*')
           .order('created_at', { ascending: false });
         
-        if (activeTab !== 'all') {
-          // Filtrar por un estado específico
-          query = query.eq('status', activeTab);
-        } // No necesitamos un else aquí, ya que por defecto traerá todos
-        
-        const { data, error } = await query;
-        
         if (error) {
-          console.error("Error fetching listings:", error);
-          setListings([]);
-          setFilteredListings([]);
+          console.error('[Admin] Error fetching listings:', error);
+          toast({
+            title: "Error",
+            description: "Failed to fetch listings from database",
+            variant: "destructive",
+          });
           return;
         }
         
-        // Logging para depuración
-        console.log(`[Admin] Recuperados ${data?.length || 0} listados con filtro: ${activeTab}`);
-        if (data && data.length > 0) {
-          console.log(`[Admin] Estados presentes: ${[...new Set(data.map(item => item.status))].join(', ')}`);
-        }
+        console.log(`[Admin] Successfully fetched ${data?.length || 0} listings`);
         
-        const mappedData = data.map(item => ({
-          id: item.id,
-          title: item.title || 'Untitled',
-          price: item.price || 0,
-          status: item.status || 'pending',
-          createdAt: item.created_at,
-          rejection_reason: item.rejection_reason,
-          location: {
+        if (data) {
+          // Map the data to our interface
+          const mappedListings: Listing[] = data.map(item => ({
+            id: item.id.toString(),
+            title: item.title || 'Untitled',
+            price: item.price || 0,
+            status: item.status || 'pending',
+            created_at: item.created_at,
+            rejection_reason: item.rejection_reason,
             city: item.city || 'Unknown',
-            state: item.state || 'Unknown'
-          },
-          broker: {
-            name: item.user_id ? `User ${item.user_id.substring(0, 6)}...` : 'No owner',
-            email: 'N/A'
-          }
-        }));
-        
-        // Actualizar conteos
-        setStatusCounts({
-          all: mappedData.length,
-          pending: mappedData.filter(l => l.status === 'pending').length,
-          approved: mappedData.filter(l => l.status === 'approved').length,
-          rejected: mappedData.filter(l => l.status === 'rejected').length
-        });
-        
-        setListings(mappedData);
-        setFilteredListings(mappedData);
+            state: item.state || 'Unknown',
+            property_type: item.property_type || 'RV Park',
+            user_id: item.user_id
+          }));
+          
+          // Update listings and counts
+          setListings(mappedListings);
+          updateStatusCounts(mappedListings);
+          
+          console.log('[Admin] Listings by status:', {
+            total: mappedListings.length,
+            pending: mappedListings.filter(l => l.status === 'pending').length,
+            approved: mappedListings.filter(l => l.status === 'approved').length,
+            rejected: mappedListings.filter(l => l.status === 'rejected').length
+          });
+        }
       } catch (error) {
-        console.error('Error general:', error);
-        setListings([]);
-        setFilteredListings([]);
+        console.error('[Admin] Error in fetchAllListings:', error);
+        toast({
+          title: "Error",
+          description: "An unexpected error occurred while fetching listings",
+          variant: "destructive",
+        });
       } finally {
         setIsLoading(false);
       }
     };
     
-    fetchListings();
-  }, [activeTab]);
+    fetchAllListings();
+  }, [toast]);
 
-  // Filter listings based on search query
+  // Update status counts
+  const updateStatusCounts = (listingsData: Listing[]) => {
+    const counts = {
+      all: listingsData.length,
+      pending: listingsData.filter(l => l.status === 'pending').length,
+      approved: listingsData.filter(l => l.status === 'approved').length,
+      rejected: listingsData.filter(l => l.status === 'rejected').length
+    };
+    setStatusCounts(counts);
+  };
+
+  // Filter listings based on active tab and search query
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setFilteredListings(listings);
-      return;
+    let filtered = listings;
+    
+    // Filter by status tab
+    if (activeTab !== 'all') {
+      filtered = filtered.filter(listing => listing.status === activeTab);
     }
     
-    const query = searchQuery.toLowerCase().trim();
-    const filtered = listings.filter(listing => 
-      listing.title?.toLowerCase().includes(query) ||
-      listing.location?.city?.toLowerCase().includes(query) ||
-      listing.location?.state?.toLowerCase().includes(query) ||
-      listing.broker?.name?.toLowerCase().includes(query)
-    );
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(listing => 
+        listing.title?.toLowerCase().includes(query) ||
+        listing.city?.toLowerCase().includes(query) ||
+        listing.state?.toLowerCase().includes(query) ||
+        listing.property_type?.toLowerCase().includes(query)
+      );
+    }
     
     setFilteredListings(filtered);
-  }, [searchQuery, listings]);
+    console.log(`[Admin] Filtered listings: ${filtered.length} (tab: ${activeTab}, search: "${searchQuery}")`);
+  }, [listings, activeTab, searchQuery]);
 
   // Handle tab change
   const handleTabChange = (value: string) => {
+    console.log(`[Admin] Tab changed to: ${value}`);
     setActiveTab(value as ListingStatus);
   };
 
@@ -263,7 +213,6 @@ const AdminDashboard = () => {
     setSelectedListing(listing);
     setNewStatus(status);
     
-    // If rejecting, open rejection dialog instead
     if (status === 'rejected') {
       setRejectionReason(listing.rejection_reason || '');
       setIsRejectDialogOpen(true);
@@ -278,7 +227,7 @@ const AdminDashboard = () => {
     setIsDeleteDialogOpen(true);
   };
 
-  // Handle rejection submission
+  // Handle rejection with reason
   const handleReject = async () => {
     if (!selectedListing) return;
     
@@ -288,9 +237,9 @@ const AdminDashboard = () => {
         .update({ 
           status: 'rejected',
           rejection_reason: rejectionReason.trim() || 'No reason provided',
-          updated_at: new Date().toISOString() // Actualizar timestamp
+          updated_at: new Date().toISOString()
         })
-        .eq('id', selectedListing.id);
+        .eq('id', parseInt(selectedListing.id));
       
       if (error) throw error;
       
@@ -306,17 +255,7 @@ const AdminDashboard = () => {
       );
       
       setListings(updatedListings);
-      setFilteredListings(updatedListings.filter(listing => 
-        activeTab === 'all' || listing.status === activeTab
-      ));
-      
-      // Actualizar conteos
-      setStatusCounts({
-        ...statusCounts,
-        rejected: statusCounts.rejected + 1,
-        pending: selectedListing.status === 'pending' ? statusCounts.pending - 1 : statusCounts.pending,
-        approved: selectedListing.status === 'approved' ? statusCounts.approved - 1 : statusCounts.approved
-      });
+      updateStatusCounts(updatedListings);
       
       toast({
         title: "Listing Rejected",
@@ -340,7 +279,6 @@ const AdminDashboard = () => {
     if (!selectedListing || !newStatus) return;
     
     try {
-      // If approving, clear any rejection reason
       const updateData = newStatus === 'approved' 
         ? { status: newStatus, rejection_reason: null, updated_at: new Date().toISOString() }
         : { status: newStatus, updated_at: new Date().toISOString() };
@@ -348,7 +286,7 @@ const AdminDashboard = () => {
       const { error } = await supabase
         .from('listings')
         .update(updateData)
-        .eq('id', selectedListing.id);
+        .eq('id', parseInt(selectedListing.id));
       
       if (error) throw error;
       
@@ -364,17 +302,7 @@ const AdminDashboard = () => {
       );
       
       setListings(updatedListings);
-      setFilteredListings(updatedListings.filter(listing => 
-        activeTab === 'all' || listing.status === activeTab
-      ));
-      
-      // Actualizar conteos
-      const oldStatus = selectedListing.status;
-      setStatusCounts({
-        ...statusCounts,
-        [newStatus]: statusCounts[newStatus as keyof typeof statusCounts] + 1,
-        [oldStatus]: statusCounts[oldStatus as keyof typeof statusCounts] - 1
-      });
+      updateStatusCounts(updatedListings);
       
       toast({
         title: "Status Updated",
@@ -400,21 +328,14 @@ const AdminDashboard = () => {
       const { error } = await supabase
         .from('listings')
         .delete()
-        .eq('id', selectedListing.id);
+        .eq('id', parseInt(selectedListing.id));
       
       if (error) throw error;
       
       // Update local state
       const updatedListings = listings.filter(listing => listing.id !== selectedListing.id);
       setListings(updatedListings);
-      setFilteredListings(updatedListings);
-      
-      // Actualizar conteos
-      setStatusCounts({
-        ...statusCounts,
-        all: statusCounts.all - 1,
-        [selectedListing.status]: statusCounts[selectedListing.status as keyof typeof statusCounts] - 1
-      });
+      updateStatusCounts(updatedListings);
       
       toast({
         title: "Listing Deleted",
@@ -587,35 +508,28 @@ const AdminDashboard = () => {
                   <TableHead>Title</TableHead>
                   <TableHead>Location</TableHead>
                   <TableHead>Price</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Listed On</TableHead>
-                  <TableHead>Broker</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredListings.map((listing) => (
                   <TableRow key={listing.id}>
-                    <TableCell className="font-medium">{listing.title || 'Untitled'}</TableCell>
-                    <TableCell>
-                      {listing.location?.city || 'N/A'}, {listing.location?.state || ''}
-                    </TableCell>
+                    <TableCell className="font-medium">{listing.title}</TableCell>
+                    <TableCell>{listing.city}, {listing.state}</TableCell>
                     <TableCell>{formatCurrency(listing.price)}</TableCell>
+                    <TableCell>{listing.property_type}</TableCell>
                     <TableCell>
-                      <StatusBadge status={listing.status || 'pending'} />
+                      <StatusBadge status={listing.status} />
                       {listing.status === 'rejected' && listing.rejection_reason && (
                         <div className="text-xs text-gray-600 mt-1 truncate max-w-[200px]" title={listing.rejection_reason}>
                           Reason: {listing.rejection_reason}
                         </div>
                       )}
                     </TableCell>
-                    <TableCell>{formatDate(listing.createdAt)}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col">
-                        <span>{listing.broker?.name || 'Unknown'}</span>
-                        <span className="text-xs text-gray-500">{listing.broker?.email || 'N/A'}</span>
-                      </div>
-                    </TableCell>
+                    <TableCell>{formatDate(listing.created_at)}</TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
