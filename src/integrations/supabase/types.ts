@@ -9,6 +9,33 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      admins: {
+        Row: {
+          created_at: string | null
+          email: string
+          id: string
+          name: string | null
+          password: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email: string
+          id?: string
+          name?: string | null
+          password: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string
+          id?: string
+          name?: string | null
+          password?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       listing_images: {
         Row: {
           created_at: string | null
@@ -61,7 +88,6 @@ export type Database = {
           occupancy_rate: number | null
           price: number
           property_type: string
-          rejection_reason: string | null
           state: string
           status: string | null
           title: string
@@ -84,7 +110,6 @@ export type Database = {
           occupancy_rate?: number | null
           price: number
           property_type: string
-          rejection_reason?: string | null
           state: string
           status?: string | null
           title: string
@@ -107,7 +132,6 @@ export type Database = {
           occupancy_rate?: number | null
           price?: number
           property_type?: string
-          rejection_reason?: string | null
           state?: string
           status?: string | null
           title?: string
@@ -116,51 +140,47 @@ export type Database = {
         }
         Relationships: []
       }
-      role_permissions: {
+      user_role_assignments: {
         Row: {
-          created_at: string
-          created_by: string | null
-          id: number
-          permission: Database["public"]["Enums"]["app_permission"]
-          role: Database["public"]["Enums"]["app_role"]
+          created_at: string | null
+          id: string
+          role_id: number | null
+          user_id: string | null
         }
         Insert: {
-          created_at?: string
-          created_by?: string | null
-          id?: number
-          permission: Database["public"]["Enums"]["app_permission"]
-          role: Database["public"]["Enums"]["app_role"]
+          created_at?: string | null
+          id?: string
+          role_id?: number | null
+          user_id?: string | null
         }
         Update: {
-          created_at?: string
-          created_by?: string | null
-          id?: number
-          permission?: Database["public"]["Enums"]["app_permission"]
-          role?: Database["public"]["Enums"]["app_role"]
+          created_at?: string | null
+          id?: string
+          role_id?: number | null
+          user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_role_assignments_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "user_roles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
-          created_at: string
-          created_by: string | null
           id: number
-          role: Database["public"]["Enums"]["app_role"]
-          user_id: string
+          name: string
         }
         Insert: {
-          created_at?: string
-          created_by?: string | null
           id?: number
-          role: Database["public"]["Enums"]["app_role"]
-          user_id: string
+          name: string
         }
         Update: {
-          created_at?: string
-          created_by?: string | null
           id?: number
-          role?: Database["public"]["Enums"]["app_role"]
-          user_id?: string
+          name?: string
         }
         Relationships: []
       }
@@ -169,17 +189,6 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      assign_admin_by_email: {
-        Args: { p_email: string }
-        Returns: undefined
-      }
-      assign_role: {
-        Args: {
-          p_user_id: string
-          p_role: Database["public"]["Enums"]["app_role"]
-        }
-        Returns: undefined
-      }
       authenticate_admin: {
         Args: { admin_email: string; admin_password: string }
         Returns: string
@@ -188,25 +197,12 @@ export type Database = {
         Args: { user_id_param: string; role_id_param: number }
         Returns: boolean
       }
-      custom_access_token_hook: {
-        Args: { event: Json }
-        Returns: Json
-      }
       get_user_role: {
         Args: { user_id_param: string }
         Returns: string
       }
-      has_permission: {
-        Args: {
-          requested_permission: Database["public"]["Enums"]["app_permission"]
-        }
-        Returns: boolean
-      }
       is_admin: {
-        Args:
-          | Record<PropertyKey, never>
-          | { email: string }
-          | { user_id_param: string }
+        Args: { email: string } | { user_id_param: string }
         Returns: boolean
       }
       is_superadmin: {
@@ -219,15 +215,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_permission:
-        | "listings.create"
-        | "listings.update"
-        | "listings.delete"
-        | "listings.approve"
-        | "admin.access"
-        | "users.manage"
-      app_role: "admin" | "user"
-      listing_status: "pending" | "approved" | "rejected"
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -342,17 +330,6 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {
-      app_permission: [
-        "listings.create",
-        "listings.update",
-        "listings.delete",
-        "listings.approve",
-        "admin.access",
-        "users.manage",
-      ],
-      app_role: ["admin", "user"],
-      listing_status: ["pending", "approved", "rejected"],
-    },
+    Enums: {},
   },
 } as const
