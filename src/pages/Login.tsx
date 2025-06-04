@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const { signIn } = useAuth();
+  const { signIn, userRole } = useAuth();
   
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +55,6 @@ const Login = () => {
     try {
       console.log(`[Login] Attempting to sign in with: ${email}`);
       
-      // Use the signIn function from useAuth
       const { error } = await signIn(email, password);
 
       if (error) {
@@ -68,13 +68,28 @@ const Login = () => {
         return;
       }
       
-      // Redirection will be handled automatically by useAuth hook and App.tsx
-      // based on the user's role (admin or not)
-      
       toast({
         title: "Welcome",
         description: "You have successfully logged in",
       });
+      
+      // Wait a moment for role to be determined, then redirect
+      setTimeout(() => {
+        const from = location.state?.from?.pathname;
+        
+        // Redirect based on user role
+        if (userRole === 'ADMIN') {
+          console.log('[Login] Redirecting admin to dashboard');
+          navigate('/admin/dashboard', { replace: true });
+        } else if (userRole === 'BROKER') {
+          console.log('[Login] Redirecting broker to dashboard');
+          navigate('/broker/dashboard', { replace: true });
+        } else {
+          // Regular user or fallback
+          console.log('[Login] Redirecting user to home or intended route');
+          navigate(from || '/', { replace: true });
+        }
+      }, 500);
       
     } catch (error: any) {
       console.error('[Login] Unexpected error:', error);

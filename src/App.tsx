@@ -1,3 +1,4 @@
+
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -29,26 +30,78 @@ import AdminListings from "./pages/admin/Listings";
 import { useAuth, AuthProvider } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
-// IMPORTANTE: Importar el AdminRoute correctamente desde su archivo propio
 import { AdminRoute } from "@/components/admin/AdminRoute";
 
 const queryClient = new QueryClient();
 
-// Componente que maneja las rutas
+// Protected route wrapper for authenticated users
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
+        <p className="mt-4 text-gray-600">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return <>{children}</>;
+};
+
+// Component that handles route-based redirection for authenticated users
+const AuthRedirect = () => {
+  const { user, userRole, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
+        <p className="mt-4 text-gray-600">Loading...</p>
+      </div>
+    );
+  }
+
+  if (user && userRole) {
+    // Get the intended destination from location state
+    const from = location.state?.from?.pathname || null;
+    
+    // If user is admin and not already on admin route, redirect to admin dashboard
+    if (userRole === 'ADMIN' && !from?.startsWith('/admin')) {
+      return <Navigate to="/admin/dashboard" replace />;
+    }
+    
+    // If user is broker, redirect to broker dashboard
+    if (userRole === 'BROKER') {
+      return <Navigate to="/broker/dashboard" replace />;
+    }
+    
+    // Regular users go to home
+    return <Navigate to="/" replace />;
+  }
+
+  // Not authenticated, show login
+  return <Login />;
+};
+
+// Main routing component
 const AppRoutes = () => {
   const { user, loading, userRole } = useAuth();
   const location = useLocation();
   
-  // Detectar rutas de admin
   const isAdminRoute = location.pathname.startsWith('/admin');
   
-  // Log para depuración
   useEffect(() => {
-    console.log(`[Router] Route changed to: ${location.pathname}`);
-    console.log(`[Router] Current auth state - User: ${user?.id}, Role: ${userRole}`);
+    console.log(`[Router] Route: ${location.pathname}, User: ${user?.id}, Role: ${userRole}`);
   }, [location.pathname, user, userRole]);
   
-  // Mostrar loader durante la verificación de autenticación
   if (loading && !isAdminRoute) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
@@ -60,7 +113,6 @@ const AppRoutes = () => {
   
   return (
     <>
-      {/* Solo mostrar header en rutas no-admin */}
       {!isAdminRoute && (
         <>
           <Header />
@@ -69,12 +121,12 @@ const AppRoutes = () => {
       )}
       
       <Routes>
-        {/* Rutas públicas */}
+        {/* Public routes */}
         <Route path="/" element={<Index />} />
         <Route path="/listings" element={<Listings />} />
         <Route path="/listings/:id" element={<ListingDetail />} />
         
-        {/* Rutas de Admin - Protegidas por AdminRoute */}
+        {/* Admin routes - Protected by AdminRoute */}
         <Route path="/admin/dashboard" element={
           <AdminRoute>
             <AdminDashboard />
@@ -91,23 +143,25 @@ const AppRoutes = () => {
           </AdminRoute>
         } />
         
-        {/* Rutas protegidas - requieren autenticación */}
+        {/* Protected routes for authenticated users */}
         <Route path="/broker/dashboard" element={
-          user ? <BrokerDashboard /> : <Navigate to="/login" state={{ from: location }} replace />
+          <ProtectedRoute>
+            <BrokerDashboard />
+          </ProtectedRoute>
         } />
         <Route path="/listings/new" element={
-          user ? <AddListing /> : <Navigate to="/login" state={{ from: location }} replace />
+          <ProtectedRoute>
+            <AddListing />
+          </ProtectedRoute>
         } />
         <Route path="/listings/:id/edit" element={
-          user ? (ListingEdit ? <ListingEdit /> : <div>Loading editor...</div>) : <Navigate to="/login" state={{ from: location }} replace />
+          <ProtectedRoute>
+            {ListingEdit ? <ListingEdit /> : <div>Loading editor...</div>}
+          </ProtectedRoute>
         } />
         
-        {/* Rutas de autenticación */}
-        <Route path="/login" element={
-          user ? (
-            userRole === 'ADMIN' ? <Navigate to="/admin/dashboard" replace /> : <Navigate to="/" replace />
-          ) : <Login />
-        } />
+        {/* Auth routes with smart redirection */}
+        <Route path="/login" element={<AuthRedirect />} />
         <Route path="/register" element={
           user ? <Navigate to="/" replace /> : <Register />
         } />
@@ -115,13 +169,13 @@ const AppRoutes = () => {
           user ? <Navigate to="/" replace /> : <ForgotPassword />
         } />
         
-        {/* Rutas de procesamiento de autenticación */}
+        {/* Auth processing routes */}
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/auth/success" element={<AuthenticationSuccess />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/verify-email" element={<EmailVerification />} />
 
-        {/* Ruta 404 */}
+        {/* 404 route */}
         <Route path="*" element={<NotFound />} />
       </Routes>
     </>
