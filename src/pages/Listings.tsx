@@ -112,7 +112,7 @@ const Listings = () => {
               {/* Filters Sidebar */}
               <aside className="lg:w-80 flex-shrink-0">
                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 sticky top-4">
-                  <ListingFilters onFilterChange={handleFilterChange} initialFilters={filters} />
+                  <ListingFilters onFilterChange={handleFilterChange} />
                 </div>
               </aside>
 
