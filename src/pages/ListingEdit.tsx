@@ -456,7 +456,9 @@ const ListingEdit = () => {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { user, userRole } = useAuth();
+  const { user } = useAuth();
+  // Derive userRole from user if available, otherwise set to undefined or a default
+  const userRole = user?.role; // Adjust this line based on your actual user object structure
   
   // State variables
   const [isLoading, setIsLoading] = useState(true);

@@ -180,37 +180,42 @@ const Listings = () => {
     return `${value}%`;
   };
   
-  // Initial fetch of all approved listings
-  useEffect(() => {
-    const loadListings = async () => {
-      setIsLoading(true);
-      try {
-        // Fetch all approved listings with max price of 50M
-        const data = await fetchApprovedListings({ priceMax: 50000000 });
-        setListings(data);
-        setFilteredListings(data);
-        
-        // Set recently viewed listings (first 3 for demo)
-        if (data.length > 0) {
-          const recentViewed = data.slice(0, 3).map(listing => ({
-            ...listing,
-            viewedOn: new Date().toLocaleDateString()
-          }));
-          setRecentlyViewedListings(recentViewed);
-        }
-        
-        setError(null);
-      } catch (err) {
-        console.error('Error loading listings:', err);
-        setError('Failed to load listings. Please try again later.');
-      } finally {
-        setIsLoading(false);
+// Initial fetch of all approved listings
+useEffect(() => {
+  const loadListings = async () => {
+    setIsLoading(true);
+    try {
+      console.log('[Listings] Starting to fetch approved listings');
+      
+      // Create a minimal filter to avoid complex queries initially
+      const data = await fetchApprovedListings({ 
+        priceMax: 50000000,
+        sitesMax: 500 // Keep this simple
+      });
+      
+      console.log(`[Listings] Received ${data.length} listings from service`);
+      setListings(data);
+      setFilteredListings(data);
+      
+      if (data.length > 0) {
+        const recentViewed = data.slice(0, Math.min(3, data.length)).map(listing => ({
+          ...listing,
+          viewedOn: new Date().toLocaleDateString()
+        }));
+        setRecentlyViewedListings(recentViewed);
       }
-    };
-    
-    loadListings();
-  }, []);
+      
+      setError(null);
+    } catch (err) {
+      console.error('[Listings] Error loading listings:', err);
+      setError('Failed to load listings. Please try again later.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
   
+  loadListings();
+}, []);  
   // Track active filters
   useEffect(() => {
     const active: string[] = [];
@@ -235,23 +240,24 @@ const Listings = () => {
       
       try {
         // Build filter object for Supabase query
-        const filterObject: any = {  // Use any temporarily, or create a proper interface
-        priceMin: extendedFilters.priceMin,
-        priceMax: extendedFilters.priceMax,
-        sitesMin: extendedFilters.sitesMin,
-        sitesMax: extendedFilters.sitesMax,
-        capRateMin: extendedFilters.capRateMin,
-        occupancyRateMin: extendedFilters.occupancyRateMin,
-        search: search || extendedFilters.search,
-        state: undefined  // Add this property with undefined default
-      };
+        // Note: status filtering is handled internally by fetchApprovedListings
+        const filterObject = {
+          priceMin: extendedFilters.priceMin,
+          priceMax: extendedFilters.priceMax,
+          sitesMin: extendedFilters.sitesMin,
+          sitesMax: extendedFilters.sitesMax,
+          capRateMin: extendedFilters.capRateMin,
+          occupancyRateMin: extendedFilters.occupancyRateMin,
+          search: search || extendedFilters.search,
+          state: undefined  // Add this property with undefined default
+        };
 
-      // Now set the state property if applicable
-      if (extendedFilters.states.length === 1) {
-        filterObject.state = extendedFilters.states[0];
-      }
+        // Now set the state property if applicable
+        if (extendedFilters.states.length === 1) {
+          filterObject.state = extendedFilters.states[0];
+        }
               
-        // Fetch filtered listings from Supabase
+        // Fetch filtered listings - only approved listings will be returned
         let filtered = await fetchApprovedListings(filterObject);
         
         // Apply any client-side filters that can't be done efficiently in the DB
