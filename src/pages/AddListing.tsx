@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, DollarSign, MapPin, Home, PercentSquare, X, Image as ImageIcon, 
-         CheckSquare, Building, Map as MapIcon, Loader2 } from "lucide-react";
+         CheckSquare, Building, Map as MapIcon, Loader2, FileText } from "lucide-react";
 import { states } from "@/data/mockListings";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
@@ -154,6 +154,16 @@ const listingSchema = z.object({
 interface ImageUpload {
   file: File;
   preview: string;
+  id: string;
+  progress: number;
+  uploaded?: boolean;
+  path?: string;
+  error?: string;
+}
+
+// PDF upload interface
+interface PDFUpload {
+  file: File;
   id: string;
   progress: number;
   uploaded?: boolean;
@@ -536,6 +546,7 @@ const AddListing = () => {
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [images, setImages] = useState<ImageUpload[]>([]);
+  const [pdfs, setPdfs] = useState<PDFUpload[]>([]);
   const [selectedAmenities, setSelectedAmenities] = useState<Record<string, boolean>>({});
   const [markerPosition, setMarkerPosition] = useState<[number, number]>([39.8283, -98.5795]); // USA center
   const [locationFound, setLocationFound] = useState(false);
@@ -1000,7 +1011,223 @@ const AddListing = () => {
   return successCount > 0;
 };
 
-  
+  // PDF file selection handler
+  const handlePDFChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const selectedFiles = Array.from(e.target.files);
+      
+      // Limit to 3 PDFs total
+      if (selectedFiles.length + pdfs.length > 3) {
+        toast({
+          variant: "destructive",
+          title: "Too many files",
+          description: "You can upload a maximum of 3 PDF documents per listing."
+        });
+        return;
+      }
+
+      // Validate file types and sizes
+      const validPDFTypes = ["application/pdf"];
+      const maxSizeInBytes = 10 * 1024 * 1024; // 10MB
+      
+      const validFiles = selectedFiles.filter(file => {
+        if (!validPDFTypes.includes(file.type)) {
+          toast({
+            variant: "destructive",
+            title: "Invalid file type",
+            description: `${file.name} is not a PDF file. Please use PDF format only.`
+          });
+          return false;
+        }
+        
+        if (file.size > maxSizeInBytes) {
+          toast({
+            variant: "destructive",
+            title: "File too large",
+            description: `${file.name} exceeds the 10MB size limit.`
+          });
+          return false;
+        }
+        
+        return true;
+      });
+
+      // Create PDF objects
+      const newPDFs = validFiles.map(file => {
+        return {
+          file,
+          id: uuidv4(),
+          progress: 0,
+          uploaded: false
+        };
+      });
+
+      setPdfs([...pdfs, ...newPDFs]);
+    }
+  };
+
+  // PDF removal handler
+  const removePDF = (id: string) => {
+    setPdfs(pdfs.filter(pdf => pdf.id !== id));
+  };
+
+  // Upload PDFs to Supabase
+  const uploadPDFsToSupabase = async (listingId: number) => {
+    if (!user) {
+      console.error("User not authenticated");
+      return false;
+    }
+
+    if (pdfs.length === 0) {
+      console.log("No PDFs to upload");
+      return true;
+    }
+
+    setUploadStatus("Uploading documents...");
+    let successCount = 0;
+    let errorCount = 0;
+    
+    for (let i = 0; i < pdfs.length; i++) {
+      const pdf = pdfs[i];
+      const documentNumber = i + 1;
+      setUploadStatus(`Uploading document ${documentNumber} of ${pdfs.length}...`);
+      
+      try {
+        // Show start of upload in UI
+        setPdfs(prevPdfs => 
+          prevPdfs.map(p => 
+            p.id === pdf.id ? { ...p, progress: 10 } : p
+          )
+        );
+        
+        // Create a unique, clean filename
+        const timestamp = Date.now();
+        const uniqueId = uuidv4().substring(0, 6);
+        const fileName = `document_${timestamp}_${uniqueId}.pdf`;
+        const filePath = `${user.id}/${fileName}`;
+        
+        console.log(`Starting upload of PDF ${documentNumber}/${pdfs.length}: ${filePath}`);
+        
+        // Update progress
+        setPdfs(prevPdfs => 
+          prevPdfs.map(p => 
+            p.id === pdf.id ? { ...p, progress: 30 } : p
+          )
+        );
+        
+        // Upload to Supabase Storage
+        let uploadSuccess = false;
+        try {
+          const { data, error: uploadError } = await supabase.storage
+            .from('listing-documents')
+            .upload(filePath, pdf.file, {
+              cacheControl: '3600',
+              upsert: true
+            });
+
+          if (uploadError) throw uploadError;
+          uploadSuccess = true;
+          console.log(`Storage upload successful for PDF ${documentNumber}`);
+        } catch (uploadError: any) {
+          console.error(`Storage upload error for PDF ${documentNumber}:`, uploadError);
+          throw new Error(`Failed to upload document: ${uploadError.message || "Unknown error"}`);
+        }
+
+        // Update progress after successful upload
+        setPdfs(prevPdfs => 
+          prevPdfs.map(p => 
+            p.id === pdf.id ? { ...p, progress: 70, path: filePath } : p
+          )
+        );
+        
+        // Create database record
+        if (uploadSuccess) {
+          try {
+            const { error: dbError } = await supabase
+              .from('listing_documents')
+              .insert([{
+                listing_id: listingId,
+                storage_path: filePath,
+                document_name: pdf.file.name,
+                document_type: 'pdf',
+                file_size: pdf.file.size
+              }]);
+              
+            if (dbError) throw dbError;
+            console.log(`Database record created successfully for PDF ${documentNumber}`);
+          } catch (dbError: any) {
+            console.error(`Database error for PDF ${documentNumber}:`, dbError);
+            
+            // Try to delete orphaned file from storage
+            try {
+              await supabase.storage
+                .from('listing-documents')
+                .remove([filePath]);
+              console.log(`Removed orphaned file ${filePath} after database error`);
+            } catch (removeError) {
+              console.error(`Failed to remove orphaned file ${filePath}:`, removeError);
+            }
+            
+            throw new Error(`Failed to save document info: ${dbError.message || "Database error"}`);
+          }
+        }
+        
+        // Update UI to show complete success
+        setPdfs(prevPdfs => 
+          prevPdfs.map(p => 
+            p.id === pdf.id ? { 
+              ...p, 
+              progress: 100, 
+              uploaded: true,
+              path: filePath
+            } : p
+          )
+        );
+        
+        successCount++;
+        
+      } catch (error: any) {
+        errorCount++;
+        console.error(`Error uploading PDF ${documentNumber}:`, error);
+        
+        setPdfs(prevPdfs => 
+          prevPdfs.map(p => 
+            p.id === pdf.id ? { 
+              ...p, 
+              progress: 0, 
+              error: error.message || "Upload failed" 
+            } : p
+          )
+        );
+      }
+    }
+    
+    // Provide feedback
+    if (errorCount > 0) {
+      if (successCount > 0) {
+        toast({
+          variant: "default",
+          title: `Mixed upload results`,
+          description: `${successCount} documents uploaded, ${errorCount} failed.`
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: `All uploads failed`,
+          description: "None of your documents could be uploaded. Please try again."
+        });
+      }
+    } else if (successCount > 0) {
+      toast({
+        variant: "default", 
+        title: "Documents uploaded successfully",
+        description: `All ${successCount} document(s) were uploaded.`
+      });
+    }
+    
+    return successCount > 0;
+  };
+
   // Form submission handler
   const onSubmit = async (values: z.infer<typeof listingSchema>) => {
     if (!user) {
@@ -1097,6 +1324,29 @@ const AddListing = () => {
             variant: "destructive",
             title: "Image upload error",
             description: "Your listing was created, but we couldn't upload your images."
+          });
+        }
+      }
+      
+      // Upload PDFs if there are any
+      if (pdfs.length > 0) {
+        try {
+          console.log(`Uploading ${pdfs.length} documents for listing ${newListingId}...`);
+          const uploadSuccess = await uploadPDFsToSupabase(newListingId);
+          
+          if (!uploadSuccess && pdfs.length > 0) {
+            toast({
+              variant: "default",
+              title: "⚠️ Document upload issues",
+              description: "Your listing was created, but there were problems with some documents."
+            });
+          }
+        } catch (uploadError) {
+          console.error("Error in PDF upload process:", uploadError);
+          toast({
+            variant: "destructive",
+            title: "Document upload error",
+            description: "Your listing was created, but we couldn't upload your documents."
           });
         }
       }
@@ -1663,6 +1913,69 @@ const AddListing = () => {
                   </p>
                 </div>
               </div>
+
+              {/* PDF Upload Section */}
+              <div className="space-y-4">
+                <h2 className="text-lg font-medium border-b pb-2">Property Documents</h2>
+                
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">Upload Documents (PDF)</label>
+                  <div className="space-y-3">
+                    {/* Current PDFs */}
+                    {pdfs.map((pdf) => (
+                      <div 
+                        key={pdf.id} 
+                        className="flex items-center gap-3 p-3 border border-gray-200 rounded-md bg-gray-50"
+                      >
+                        <FileText className="h-8 w-8 text-red-500 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {pdf.file.name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {(pdf.file.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                          {pdf.progress > 0 && pdf.progress < 100 && (
+                            <Progress value={pdf.progress} className="w-full h-2 mt-1" />
+                          )}
+                          {pdf.error && (
+                            <p className="text-xs text-red-600 mt-1">{pdf.error}</p>
+                          )}
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => removePDF(pdf.id)}
+                          className="bg-white/80 rounded-full p-1 hover:bg-white"
+                        >
+                          <X className="h-4 w-4 text-gray-700" />
+                        </button>
+                      </div>
+                    ))}
+                    
+                    {/* Upload button (if less than 3 PDFs) */}
+                    {pdfs.length < 3 && (
+                      <div className="border border-dashed border-gray-300 rounded-md p-4 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors">
+                        <label htmlFor="pdf-upload" className="cursor-pointer w-full h-full flex flex-col items-center justify-center text-gray-500 hover:text-gray-700">
+                          <FileText className="h-8 w-8 mb-2" />
+                          <span className="text-sm font-medium">Add PDF Document</span>
+                          <span className="text-xs text-gray-400 mt-1">Click to browse files</span>
+                          <input
+                            id="pdf-upload"
+                            type="file"
+                            accept="application/pdf"
+                            multiple
+                            className="hidden"
+                            onChange={handlePDFChange}
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Upload up to 3 PDF documents (property reports, financial statements, etc.). Max 10MB per file.
+                  </p>
+                </div>
+              </div>
               
               <div className="flex justify-end pt-4 border-t mt-8">
                 <Button 
@@ -1674,7 +1987,7 @@ const AddListing = () => {
                     <div className="flex items-center">
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       {uploadStatus || "Submitting..."}
-                                        </div>
+                    </div>
                   ) : "Submit Listing"}
                 </Button>
               </div>
