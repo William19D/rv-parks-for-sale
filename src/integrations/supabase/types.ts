@@ -16,6 +16,7 @@ export type Database = {
           id: string
           name: string | null
           password: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string | null
@@ -23,6 +24,7 @@ export type Database = {
           id?: string
           name?: string | null
           password: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string | null
@@ -30,6 +32,7 @@ export type Database = {
           id?: string
           name?: string | null
           password?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -199,7 +202,7 @@ export type Database = {
         Returns: string
       }
       is_admin: {
-        Args: { user_id_param: string }
+        Args: { email: string } | { user_id_param: string }
         Returns: boolean
       }
       is_superadmin: {

@@ -108,7 +108,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // Initialize authentication state
   useEffect(() => {
-    console.log('[Auth] Initializing authentication provider');
+    console.log('[Auth] Initializing auth provider');
     let isMounted = true;
     
     const setupAuth = async () => {
@@ -128,7 +128,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
           return;
         }
-        
+
         if (!session) {
           console.log('[Auth] No session found');
           if (isMounted) {
@@ -213,10 +213,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (isMounted) setLoading(false);
       }
     );
-    
+
     return () => {
       isMounted = false;
-      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   }, []);
@@ -359,7 +358,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     hasPermission,
     hasRole,
   };
-  
+
   return (
     <AuthContext.Provider value={value}>
       {children}
