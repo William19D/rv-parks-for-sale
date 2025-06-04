@@ -1,10 +1,10 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth'; // Importamos el hook
 import { 
   Tabs, 
   TabsContent, 
@@ -49,7 +49,8 @@ import {
   Edit,
   Eye,
   Trash,
-  AlertCircle
+  AlertCircle,
+  UserCircle
 } from 'lucide-react';
 
 // Status type for listings
@@ -91,9 +92,53 @@ const AdminDashboard = () => {
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [newStatus, setNewStatus] = useState<string>('');
   const [rejectionReason, setRejectionReason] = useState('');
+  const [statusCounts, setStatusCounts] = useState({
+    all: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0
+  });
+  
+  // Obtener información del usuario actual
+  const { user, userRole } = useAuth();
+  const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Admin';
   
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Verificar conteos de listados - Corregido el error de TypeScript
+  const checkListingCounts = async () => {
+    try {
+      // Enfoque alternativo usando consultas separadas para evitar el error de TypeScript
+      const { count: totalCount } = await supabase
+        .from('listings')
+        .select('*', { count: 'exact', head: true });
+        
+      const { count: pendingCount } = await supabase
+        .from('listings')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending');
+        
+      const { count: approvedCount } = await supabase
+        .from('listings')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'approved');
+        
+      const { count: rejectedCount } = await supabase
+        .from('listings')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'rejected');
+      
+      console.log('[Admin] Conteos alternativos:', {
+        total: totalCount,
+        pending: pendingCount,
+        approved: approvedCount,
+        rejected: rejectedCount
+      });
+    } catch (err) {
+      console.error('Error verificando conteos:', err);
+    }
+  };
 
   // Allow access without strict admin checks
   useEffect(() => {
@@ -104,74 +149,82 @@ const AdminDashboard = () => {
         
         if (session?.user) {
           console.log("User authenticated, setting ADMIN role in localStorage");
-          // Force set ADMIN role in localStorage
           localStorage.setItem('userRole', 'ADMIN');
         } else {
           console.log("No session found, will proceed anyway");
-          // Set a special flag to indicate we're allowing access without login
           localStorage.setItem('bypassAuth', 'true');
+          localStorage.setItem('userRole', 'ADMIN'); // Asegurarnos de que tiene rol de admin
         }
       } catch (error) {
         console.error("Auth check error:", error);
-        // Allow access despite errors
       }
     };
     
     checkAuth();
-    // No navigation redirects or blocking based on auth status
+    // No llamamos checkListingCounts() aquí porque puede causar error si la función RPC no existe
   }, []);
 
-  // Fetch listings
+  // Fetch listings - VERSIÓN MEJORADA
   useEffect(() => {
     const fetchListings = async () => {
       setIsLoading(true);
       
       try {
+        // Consulta que garantiza obtener todos los listados
         let query = supabase
           .from('listings')
-          .select(`
-            id,
-            title,
-            price,
-            status,
-            createdAt,
-            rejection_reason,
-            location,
-            broker:broker_id (
-              name,
-              email
-            )
-          `)
-          .order('createdAt', { ascending: false });
+          .select('*')
+          .order('created_at', { ascending: false });
         
-        // Filter by status if not "all"
         if (activeTab !== 'all') {
+          // Filtrar por un estado específico
           query = query.eq('status', activeTab);
-        }
+        } // No necesitamos un else aquí, ya que por defecto traerá todos
         
         const { data, error } = await query;
         
         if (error) {
           console.error("Error fetching listings:", error);
-          // Show empty data instead of error
           setListings([]);
           setFilteredListings([]);
           return;
         }
         
-        const mappedData = data ? data.map((item: any) => ({
-          ...item,
-          // Handle missing or malformed broker data
-          broker: Array.isArray(item.broker) 
-            ? item.broker[0] || { name: 'Unknown', email: 'N/A' } 
-            : item.broker || { name: 'Unknown', email: 'N/A' }
-        })) : [];
+        // Logging para depuración
+        console.log(`[Admin] Recuperados ${data?.length || 0} listados con filtro: ${activeTab}`);
+        if (data && data.length > 0) {
+          console.log(`[Admin] Estados presentes: ${[...new Set(data.map(item => item.status))].join(', ')}`);
+        }
+        
+        const mappedData = data.map(item => ({
+          id: item.id,
+          title: item.title || 'Untitled',
+          price: item.price || 0,
+          status: item.status || 'pending',
+          createdAt: item.created_at,
+          rejection_reason: item.rejection_reason,
+          location: {
+            city: item.city || 'Unknown',
+            state: item.state || 'Unknown'
+          },
+          broker: {
+            name: item.user_id ? `User ${item.user_id.substring(0, 6)}...` : 'No owner',
+            email: 'N/A'
+          }
+        }));
+        
+        // Actualizar conteos
+        setStatusCounts({
+          all: mappedData.length,
+          pending: mappedData.filter(l => l.status === 'pending').length,
+          approved: mappedData.filter(l => l.status === 'approved').length,
+          rejected: mappedData.filter(l => l.status === 'rejected').length
+        });
         
         setListings(mappedData);
         setFilteredListings(mappedData);
       } catch (error) {
-        console.error('Error fetching listings:', error);
-        // Don't show error toast, just set empty data
+        console.error('Error general:', error);
         setListings([]);
         setFilteredListings([]);
       } finally {
@@ -234,7 +287,8 @@ const AdminDashboard = () => {
         .from('listings')
         .update({ 
           status: 'rejected',
-          rejection_reason: rejectionReason.trim() || 'No reason provided' 
+          rejection_reason: rejectionReason.trim() || 'No reason provided',
+          updated_at: new Date().toISOString() // Actualizar timestamp
         })
         .eq('id', selectedListing.id);
       
@@ -255,6 +309,14 @@ const AdminDashboard = () => {
       setFilteredListings(updatedListings.filter(listing => 
         activeTab === 'all' || listing.status === activeTab
       ));
+      
+      // Actualizar conteos
+      setStatusCounts({
+        ...statusCounts,
+        rejected: statusCounts.rejected + 1,
+        pending: selectedListing.status === 'pending' ? statusCounts.pending - 1 : statusCounts.pending,
+        approved: selectedListing.status === 'approved' ? statusCounts.approved - 1 : statusCounts.approved
+      });
       
       toast({
         title: "Listing Rejected",
@@ -280,8 +342,8 @@ const AdminDashboard = () => {
     try {
       // If approving, clear any rejection reason
       const updateData = newStatus === 'approved' 
-        ? { status: newStatus, rejection_reason: null }
-        : { status: newStatus };
+        ? { status: newStatus, rejection_reason: null, updated_at: new Date().toISOString() }
+        : { status: newStatus, updated_at: new Date().toISOString() };
         
       const { error } = await supabase
         .from('listings')
@@ -305,6 +367,14 @@ const AdminDashboard = () => {
       setFilteredListings(updatedListings.filter(listing => 
         activeTab === 'all' || listing.status === activeTab
       ));
+      
+      // Actualizar conteos
+      const oldStatus = selectedListing.status;
+      setStatusCounts({
+        ...statusCounts,
+        [newStatus]: statusCounts[newStatus as keyof typeof statusCounts] + 1,
+        [oldStatus]: statusCounts[oldStatus as keyof typeof statusCounts] - 1
+      });
       
       toast({
         title: "Status Updated",
@@ -338,6 +408,13 @@ const AdminDashboard = () => {
       const updatedListings = listings.filter(listing => listing.id !== selectedListing.id);
       setListings(updatedListings);
       setFilteredListings(updatedListings);
+      
+      // Actualizar conteos
+      setStatusCounts({
+        ...statusCounts,
+        all: statusCounts.all - 1,
+        [selectedListing.status]: statusCounts[selectedListing.status as keyof typeof statusCounts] - 1
+      });
       
       toast({
         title: "Listing Deleted",
@@ -381,8 +458,18 @@ const AdminDashboard = () => {
   };
 
   return (
-    /* Remove the wrapping div, AdminHeader, HeaderSpacer, and AdminSidebar since they're provided by AdminLayout */
     <div className="flex-1 p-6">
+      {/* Header con información del usuario */}
+      <div className="flex justify-between items-center mb-6 bg-white rounded-lg shadow p-4">
+        <div className="flex items-center">
+          <UserCircle className="h-6 w-6 mr-2 text-[#f74f4f]" />
+          <div>
+            <h2 className="text-sm font-semibold text-gray-600">Admin User:</h2>
+            <p className="text-gray-800 font-medium">{userName}</p>
+          </div>
+        </div>
+      </div>
+      
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Admin Dashboard</h1>
         <Button 
@@ -391,6 +478,41 @@ const AdminDashboard = () => {
         >
           Add New Listing
         </Button>
+      </div>
+
+      {/* Dashboard Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white rounded-lg shadow p-4">
+          <h3 className="text-gray-500 text-sm mb-1">Total Listings</h3>
+          <div className="flex justify-between items-center">
+            <span className="text-2xl font-bold">{statusCounts.all}</span>
+            <Badge className="bg-gray-100 text-gray-800">All</Badge>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow p-4">
+          <h3 className="text-gray-500 text-sm mb-1">Pending Review</h3>
+          <div className="flex justify-between items-center">
+            <span className="text-2xl font-bold">{statusCounts.pending}</span>
+            <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow p-4">
+          <h3 className="text-gray-500 text-sm mb-1">Approved</h3>
+          <div className="flex justify-between items-center">
+            <span className="text-2xl font-bold">{statusCounts.approved}</span>
+            <Badge className="bg-green-100 text-green-800">Approved</Badge>
+          </div>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow p-4">
+          <h3 className="text-gray-500 text-sm mb-1">Rejected</h3>
+          <div className="flex justify-between items-center">
+            <span className="text-2xl font-bold">{statusCounts.rejected}</span>
+            <Badge className="bg-red-100 text-red-800">Rejected</Badge>
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg shadow p-6">
@@ -403,15 +525,30 @@ const AdminDashboard = () => {
             className="w-full md:w-auto"
           >
             <TabsList>
-              <TabsTrigger value="all" className="text-sm">All Listings</TabsTrigger>
+              <TabsTrigger value="all" className="text-sm">
+                All Listings
+                <Badge className="ml-2 bg-gray-100 text-gray-800 hover:bg-gray-100">
+                  {statusCounts.all}
+                </Badge>
+              </TabsTrigger>
               <TabsTrigger value="pending" className="text-sm">
                 Pending 
                 <Badge className="ml-2 bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
-                  {listings.filter(l => l.status === 'pending').length}
+                  {statusCounts.pending}
                 </Badge>
               </TabsTrigger>
-              <TabsTrigger value="approved" className="text-sm">Approved</TabsTrigger>
-              <TabsTrigger value="rejected" className="text-sm">Rejected</TabsTrigger>
+              <TabsTrigger value="approved" className="text-sm">
+                Approved
+                <Badge className="ml-2 bg-green-100 text-green-800 hover:bg-green-100">
+                  {statusCounts.approved}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="rejected" className="text-sm">
+                Rejected
+                <Badge className="ml-2 bg-red-100 text-red-800 hover:bg-red-100">
+                  {statusCounts.rejected}
+                </Badge>
+              </TabsTrigger>
             </TabsList>
           </Tabs>
           
