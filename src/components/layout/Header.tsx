@@ -14,6 +14,9 @@ import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
+// Importar el logo directamente
+import logoImage from '@/assets/logo.svg';
+
 // Definir el tipo para los elementos de navegación
 interface NavItem {
   name: string;
@@ -414,7 +417,7 @@ export const Header = memo(() => {
             {/* Logo Area */}
             <div className="w-48 h-12 flex items-center mr-4">
               <img 
-                src="/assets/logo.svg" 
+                src={logoImage}  
                 alt="RoverPass Logo" 
                 className="w-full h-full object-contain group-hover:opacity-80 transition-opacity duration-300" 
               />
