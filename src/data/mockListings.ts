@@ -1,5 +1,26 @@
+
 import backgroundImg from "@/assets/background.jpeg";
 import softwareImg from "@/assets/software.png";
+
+export interface FilterOptions {
+  priceMin: number;
+  priceMax: number;
+  state: string;
+  sitesMin: number;
+  sitesMax: number;
+  capRateMin: number;
+  search: string;
+}
+
+export const states = [
+  "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware", 
+  "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", 
+  "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi", 
+  "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey", "New Mexico", 
+  "New York", "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", 
+  "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", 
+  "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming"
+];
 
 export interface Listing {
   id: number;
@@ -19,6 +40,7 @@ export interface Listing {
   capRate: number;
   propertyType: string;
   broker: {
+    id: string;
     name: string;
     company: string;
     phone: string;
@@ -52,6 +74,7 @@ export const mockListings: Listing[] = [
     capRate: 7.2,
     propertyType: "RV Resort",
     broker: {
+      id: "b1",
       name: "Sarah Johnson",
       company: "Desert Properties LLC",
       phone: "(555) 123-4567",
@@ -82,6 +105,7 @@ export const mockListings: Listing[] = [
     capRate: 6.8,
     propertyType: "Campground",
     broker: {
+      id: "b2",
       name: "Mike Thompson",
       company: "Mountain Realty",
       phone: "(555) 987-6543",
@@ -112,6 +136,7 @@ export const mockListings: Listing[] = [
     capRate: 6.5,
     propertyType: "RV Park",
     broker: {
+      id: "b3",
       name: "Emily White",
       company: "Sunshine Realty Group",
       phone: "(555) 246-8013",
@@ -142,6 +167,7 @@ export const mockListings: Listing[] = [
     capRate: 6.2,
     propertyType: "Campground",
     broker: {
+      id: "b4",
       name: "David Green",
       company: "Coastal Properties",
       phone: "(555) 369-9124",
@@ -172,6 +198,7 @@ export const mockListings: Listing[] = [
     capRate: 7.8,
     propertyType: "RV Resort",
     broker: {
+      id: "b5",
       name: "Linda Brown",
       company: "Luxury RV Sales",
       phone: "(555) 482-0235",
@@ -202,6 +229,7 @@ export const mockListings: Listing[] = [
     capRate: 6.4,
     propertyType: "Campground",
     broker: {
+      id: "b6",
       name: "Thomas Clark",
       company: "Oceanfront Realty",
       phone: "(555) 593-1346",
