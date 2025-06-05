@@ -414,7 +414,7 @@ export const Header = memo(() => {
             {/* Logo Area */}
             <div className="w-48 h-12 flex items-center mr-4">
               <img 
-                src="../src/assets/logo.svg" 
+                src="/assets/logo.svg" 
                 alt="RoverPass Logo" 
                 className="w-full h-full object-contain group-hover:opacity-80 transition-opacity duration-300" 
               />
