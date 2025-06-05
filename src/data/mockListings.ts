@@ -19,6 +19,7 @@ export interface Listing {
   capRate: number;
   propertyType: string;
   broker: {
+    id: number;
     name: string;
     company: string;
     phone: string;
@@ -27,6 +28,38 @@ export interface Listing {
   createdAt: string;
   featured: boolean;
 }
+
+export interface FilterOptions {
+  propertyTypes: string[];
+  features: string[];
+  priceMin: number;
+  priceMax: number;
+  occupancyRateMin: number;
+  revenueMin: number;
+  revenueMax: number;
+  sitesMin: number;
+  sitesMax: number;
+  capRateMin: number;
+  listedWithinDays: number;
+  statesSelected: string[];
+  onlyFeatured: boolean;
+  onlyWithImages: boolean;
+  sortBy: string;
+  sortDirection: 'asc' | 'desc';
+  search: string;
+  state: string;
+}
+
+export const states = [
+  "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", 
+  "Delaware", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", 
+  "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", 
+  "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", 
+  "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", 
+  "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", 
+  "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington", "West Virginia", 
+  "Wisconsin", "Wyoming"
+];
 
 // Mock data for listings with asset-based images
 export const mockListings: Listing[] = [
@@ -52,6 +85,7 @@ export const mockListings: Listing[] = [
     capRate: 7.2,
     propertyType: "RV Resort",
     broker: {
+      id: 1,
       name: "Sarah Johnson",
       company: "Desert Properties LLC",
       phone: "(555) 123-4567",
@@ -82,6 +116,7 @@ export const mockListings: Listing[] = [
     capRate: 6.8,
     propertyType: "Campground",
     broker: {
+      id: 2,
       name: "Mike Thompson",
       company: "Mountain Realty",
       phone: "(555) 987-6543",
@@ -112,6 +147,7 @@ export const mockListings: Listing[] = [
     capRate: 6.5,
     propertyType: "RV Park",
     broker: {
+      id: 3,
       name: "Emily White",
       company: "Sunshine Realty Group",
       phone: "(555) 246-8013",
@@ -142,6 +178,7 @@ export const mockListings: Listing[] = [
     capRate: 6.2,
     propertyType: "Campground",
     broker: {
+      id: 4,
       name: "David Green",
       company: "Coastal Properties",
       phone: "(555) 369-9124",
@@ -172,6 +209,7 @@ export const mockListings: Listing[] = [
     capRate: 7.8,
     propertyType: "RV Resort",
     broker: {
+      id: 5,
       name: "Linda Brown",
       company: "Luxury RV Sales",
       phone: "(555) 482-0235",
@@ -202,6 +240,7 @@ export const mockListings: Listing[] = [
     capRate: 6.4,
     propertyType: "Campground",
     broker: {
+      id: 6,
       name: "Thomas Clark",
       company: "Oceanfront Realty",
       phone: "(555) 593-1346",
