@@ -9,6 +9,100 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      inquiry: {
+        Row: {
+          created_at: string
+          email: string
+          id: number
+          is_read: boolean
+          listing_id: number
+          message: string
+          name: string
+          phone: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: number
+          is_read?: boolean
+          listing_id: number
+          message: string
+          name: string
+          phone?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: number
+          is_read?: boolean
+          listing_id?: number
+          message?: string
+          name?: string
+          phone?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inquiry_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      listing_documents: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: number
+          is_primary: boolean | null
+          listing_id: number
+          name: string
+          size: number | null
+          storage_path: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: number
+          is_primary?: boolean | null
+          listing_id: number
+          name: string
+          size?: number | null
+          storage_path: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: number
+          is_primary?: boolean | null
+          listing_id?: number
+          name?: string
+          size?: number | null
+          storage_path?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_documents_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "listings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       listing_images: {
         Row: {
           created_at: string | null
@@ -59,6 +153,7 @@ export type Database = {
           longitude: number | null
           num_sites: number | null
           occupancy_rate: number | null
+          offering_memorandum_path: string | null
           price: number
           property_type: string
           rejection_reason: string | null
@@ -82,6 +177,7 @@ export type Database = {
           longitude?: number | null
           num_sites?: number | null
           occupancy_rate?: number | null
+          offering_memorandum_path?: string | null
           price: number
           property_type: string
           rejection_reason?: string | null
@@ -105,6 +201,7 @@ export type Database = {
           longitude?: number | null
           num_sites?: number | null
           occupancy_rate?: number | null
+          offering_memorandum_path?: string | null
           price?: number
           property_type?: string
           rejection_reason?: string | null
