@@ -11,6 +11,10 @@ import {
   Users, CheckCircle2, Loader2, MapPin 
 } from "lucide-react";
 
+// Importar imágenes directamente
+import backgroundImage from "@/assets/background.jpeg";
+import softwareImage from "@/assets/sofware.png";
+
 const Index = () => {
   // Estados para los listings y UI
   const [featuredListings, setFeaturedListings] = useState<Listing[]>([]);
@@ -98,7 +102,7 @@ const Index = () => {
       <section className="relative bg-gradient-to-r from-[#f74f4f] to-[#ff7a45] py-20 md:py-32 overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <img 
-            src="../src/assets/background.jpeg" 
+            src={backgroundImage} 
             alt="RV Park Background" 
             className="w-full h-full object-cover"
           />
@@ -296,7 +300,7 @@ const Index = () => {
               className="order-1 lg:order-2 bg-gray-100 rounded-xl p-3 shadow-lg"
             >
               <img 
-                src="../src/assets/sofware.png" 
+                src={softwareImage} 
                 alt="RoverPass Campground Reservation Software" 
                 className="w-full h-auto rounded-lg" 
               />
