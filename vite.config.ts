@@ -6,8 +6,6 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  // Usa base relativa para desarrollo y absoluta para producción
-  base: mode === 'development' ? '/' : 'https://preview--park-sell-rover.lovable.app/',
   server: {
     host: "::",
     port: 8080,
@@ -23,11 +21,6 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
-    assetsDir: 'lovableassets',
-    rollupOptions: {
-      output: {
-        assetFileNames: 'lovableassets/[name]-[hash][extname]'
-      }
-    }
-  }
+    assetsDir: "lovableassetts",
+  },
 }));

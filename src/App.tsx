@@ -34,10 +34,6 @@ import { AdminRoute } from "@/components/admin/AdminRoute";
 
 const queryClient = new QueryClient();
 
-// Determinar basename según el entorno
-const isProduction = import.meta.env.PROD;
-const BASE_URL = isProduction ? "https://preview--park-sell-rover.lovable.app" : "";
-
 // Route handling component
 const AppRoutes = () => {
   const { user, loading, isAdmin, roles } = useAuth();
@@ -50,9 +46,7 @@ const AppRoutes = () => {
   useEffect(() => {
     console.log(`[Router] Route changed to: ${location.pathname}`);
     console.log(`[Router] Current auth state - User: ${user?.id || 'none'}`);
-    console.log(`[Router] Is admin: ${isAdmin}, Roles: ${roles?.join(', ') || 'none'}`);
-    console.log(`[Router] Environment: ${isProduction ? 'Production' : 'Development'}`);
-    console.log(`[Router] Base URL: ${BASE_URL}`);
+    console.log(`[Router] Is admin: ${isAdmin}, Roles: ${roles.join(', ')}`);
   }, [location.pathname, user, isAdmin, roles]);
   
   // Show loader during authentication verification
@@ -141,7 +135,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter basename={BASE_URL}>
+        <BrowserRouter>
           <AppRoutes />
         </BrowserRouter>
       </TooltipProvider>
