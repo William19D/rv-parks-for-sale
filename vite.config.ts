@@ -21,6 +21,6 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
-    assetsDir: "lovableassetts",
+    assetsDir: "lovableassets",
   },
 }));
