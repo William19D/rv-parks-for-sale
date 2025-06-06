@@ -34,9 +34,19 @@ import { AdminRoute } from "@/components/admin/AdminRoute";
 
 const queryClient = new QueryClient();
 
-// Esta función ayuda a resolver las rutas en ambos entornos
-const getUrl = (path: string): string => {
-  return path; // Ya no necesitamos modificar las rutas aquí
+// Configuración de la URL base para rutas absolutas
+const BASE_PATH = "/rv-parks-for-sale";
+
+// Función para generar URLs absolutas
+const absoluteUrl = (path: string): string => {
+  // Si la ruta ya empieza con la base, no la agregamos de nuevo
+  if (path.startsWith(BASE_PATH)) {
+    return path;
+  }
+  
+  // Asegurarse de que la ruta comience con /
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${BASE_PATH}${normalizedPath}`;
 };
 
 // Route handling component
@@ -45,13 +55,14 @@ const AppRoutes = () => {
   const location = useLocation();
   
   // Detect admin routes
-  const isAdminRoute = location.pathname.startsWith('/admin');
+  const isAdminRoute = location.pathname.startsWith(`${BASE_PATH}/admin`);
   
   // Debug logging
   useEffect(() => {
     console.log(`[Router] Route changed to: ${location.pathname}`);
     console.log(`[Router] Current auth state - User: ${user?.id || 'none'}`);
     console.log(`[Router] Is admin: ${isAdmin}, Roles: ${roles?.join(', ') || 'none'}`);
+    console.log(`[Router] Base path: ${BASE_PATH}`);
   }, [location.pathname, user, isAdmin, roles]);
   
   // Show loader during authentication verification
@@ -140,7 +151,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter basename={BASE_PATH}>
           <AppRoutes />
         </BrowserRouter>
       </TooltipProvider>
@@ -148,4 +159,6 @@ const App = () => (
   </QueryClientProvider>
 );
 
+// Exportar absoluteUrl para que pueda ser utilizado en otros componentes
+export { absoluteUrl };
 export default App;

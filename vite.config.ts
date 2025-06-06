@@ -5,8 +5,8 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  // El problema estaba aquí: no necesitamos una URL completa, solo un camino base
-  base: '/',
+  // Configurar la base para que coincida con la ruta en roverpass.com
+  base: '/rv-parks-for-sale/',
   server: {
     host: "::",
     port: 8080,
