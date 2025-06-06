@@ -3,13 +3,10 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 
-// URL base para rutas absolutas
-const BASE_URL = "https://preview--park-sell-rover.lovable.app";
-
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  // Usar base relativa en desarrollo y absoluta en producción
-  base: mode === 'development' ? '/' : BASE_URL,
+  // El problema estaba aquí: no necesitamos una URL completa, solo un camino base
+  base: '/',
   server: {
     host: "::",
     port: 8080,
