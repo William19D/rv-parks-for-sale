@@ -35,7 +35,7 @@ import { AdminRoute } from "@/components/admin/AdminRoute";
 const queryClient = new QueryClient();
 
 // Configuración de la URL base para rutas absolutas
-const BASE_PATH = "/rv-parks-for-sale";
+const BASE_PATH = "https://roverpass.com/rv-parks-for-sale";
 
 // Función para generar URLs absolutas
 const absoluteUrl = (path: string): string => {

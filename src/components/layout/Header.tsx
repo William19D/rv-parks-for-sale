@@ -13,83 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { absoluteUrl, fullUrl, shouldUseExternalLink } from "@/lib/url";
-
-// Importar el logo directamente
-import logoImage from '@/assets/logo.svg';
-
-// Componente de enlace que decide si usar Link de React Router o un enlace externo <a>
-const SmartLink = memo(({ to, children, className = "", onClick = () => {}, ...props }: {
-  to: string;
-  children: React.ReactNode;
-  className?: string;
-  onClick?: () => void;
-  [key: string]: any;
-}) => {
-  // Determinar si necesitamos un enlace externo
-  const useExternalLink = shouldUseExternalLink();
-  
-  if (useExternalLink) {
-    const externalUrl = fullUrl(to);
-    return (
-      <a 
-        href={externalUrl} 
-        className={className}
-        onClick={(e) => {
-          onClick();
-        }}
-        {...props}
-      >
-        {children}
-      </a>
-    );
-  }
-  
-  return (
-    <Link 
-      to={absoluteUrl(to)} 
-      className={className}
-      onClick={onClick}
-      {...props}
-    >
-      {children}
-    </Link>
-  );
-});
-
-// Componente de NavLink inteligente
-const SmartNavLink = memo(({ to, children, className, ...props }: {
-  to: string;
-  children: React.ReactNode;
-  className: string | ((props: { isActive: boolean; isPending: boolean }) => string);
-  [key: string]: any;
-}) => {
-  const useExternalLink = shouldUseExternalLink();
-  
-  if (useExternalLink) {
-    const externalUrl = fullUrl(to);
-    const location = useLocation();
-    // Determinar si está activo
-    const isActive = location.pathname.includes(to);
-    
-    // Si className es una función
-    const classNameValue = typeof className === 'function' 
-      ? className({ isActive, isPending: false }) 
-      : className;
-    
-    return (
-      <a href={externalUrl} className={classNameValue} {...props}>
-        {children}
-      </a>
-    );
-  }
-  
-  return (
-    <NavLink to={absoluteUrl(to)} className={className} {...props}>
-      {children}
-    </NavLink>
-  );
-});
 
 // Definir el tipo para los elementos de navegación
 interface NavItem {
@@ -135,26 +58,18 @@ export const HeaderSpacer = memo(() => {
 
 // Función para determinar si una ruta está activa
 const isRouteActive = (item: NavItem, pathname: string): boolean => {
-  // Eliminar el prefijo BASE_PATH para la comparación de rutas
-  const BASE_PATH = "/rv-parks-for-sale";
-  const normalizedPathname = pathname.startsWith(BASE_PATH) 
-    ? pathname.substring(BASE_PATH.length) || '/' 
-    : pathname;
-  
-  const itemPath = item.path;
-  
   // Si es una ruta exacta, solo debe coincidir perfectamente
   if (item.exact) {
-    return normalizedPathname === itemPath;
+    return pathname === item.path;
   }
   
   // Verificar si el path actual está en las rutas excluidas
-  if (item.exclude && item.exclude.some(route => normalizedPathname === route || normalizedPathname.startsWith(route))) {
+  if (item.exclude && item.exclude.some(route => pathname === route || pathname.startsWith(route))) {
     return false;
   }
   
   // Para rutas no exactas, verificar si coincide exactamente o si es una subruta
-  return normalizedPathname === itemPath || (itemPath !== '/' && normalizedPathname.startsWith(`${itemPath}/`));
+  return pathname === item.path || (item.path !== '/' && pathname.startsWith(`${item.path}/`));
 };
 
 // Componente memoizado para cada elemento de navegación
@@ -175,11 +90,11 @@ const NavItemComponent = memo(({ item, closeDropdowns }: {
 
   return (
     <div className="relative group">
-      <SmartNavLink
+      <NavLink
         to={item.path}
-        className={({ isActive }) => cn(
+        className={cn(
           "px-2 py-2 text-sm font-medium transition-colors flex items-center",
-          (isActive || active) ? "text-[#f74f4f]" : "text-gray-700 hover:text-[#f74f4f]"
+          active ? "text-[#f74f4f]" : "text-gray-700 hover:text-[#f74f4f]"
         )}
         onClick={handleClick}
       >
@@ -189,7 +104,7 @@ const NavItemComponent = memo(({ item, closeDropdowns }: {
           "absolute bottom-0 left-0 h-0.5 bg-[#f74f4f] transition-all duration-300",
           active ? "w-full" : "w-0 group-hover:w-full"
         )}></span>
-      </SmartNavLink>
+      </NavLink>
     </div>
   );
 });
@@ -212,11 +127,11 @@ const MobileNavItem = memo(({ item, setMenuOpen }: {
 
   return (
     <div>
-      <SmartNavLink
+      <NavLink
         to={item.path}
-        className={({ isActive }) => cn(
+        className={cn(
           "flex items-center py-2 px-3 rounded-md group",
-          (isActive || active) ? "bg-gray-100 text-[#f74f4f]" : "hover:bg-gray-100"
+          active ? "bg-gray-100 text-[#f74f4f]" : "hover:bg-gray-100"
         )}
         onClick={handleClick}
       >
@@ -227,7 +142,7 @@ const MobileNavItem = memo(({ item, setMenuOpen }: {
         )}>
           {item.name}
         </span>
-      </SmartNavLink>
+      </NavLink>
     </div>
   );
 });
@@ -324,7 +239,7 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
         {/* Contenido para usuario no autenticado */}
         {isMobile ? (
           <div className="space-y-2">
-            <SmartLink 
+            <Link 
               to="/login" 
               onClick={() => { 
                 setMenuOpen(false);
@@ -334,8 +249,8 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
               <Button variant="outline" className="w-full">
                 Sign In
               </Button>
-            </SmartLink>
-            <SmartLink 
+            </Link>
+            <Link 
               to="/register" 
               onClick={() => { 
                 setMenuOpen(false);
@@ -345,19 +260,19 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
               <Button className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]">
                 Register
               </Button>
-            </SmartLink>
+            </Link>
           </div>
         ) : (
           <div className="flex items-center space-x-2">
-            <SmartLink 
+            <Link 
               to="/login" 
               onClick={() => window.scrollTo({ top: 0, behavior: "instant" })}
             >
               <Button variant="ghost" size="sm">
                 Sign In
               </Button>
-            </SmartLink>
-            <SmartLink 
+            </Link>
+            <Link 
               to="/register" 
               onClick={() => window.scrollTo({ top: 0, behavior: "instant" })}
             >
@@ -367,7 +282,7 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
               >
                 Register
               </Button>
-            </SmartLink>
+            </Link>
           </div>
         )}
       </>
@@ -485,7 +400,7 @@ export const Header = memo(() => {
     >
       <div className="container mx-auto px-4 flex items-center justify-between">
         <div className="flex items-center">
-          <SmartLink 
+          <Link 
             to="/" 
             className="flex items-center group" 
             onClick={() => {
@@ -499,12 +414,12 @@ export const Header = memo(() => {
             {/* Logo Area */}
             <div className="w-48 h-12 flex items-center mr-4">
               <img 
-                src={logoImage}  
+                src="/logo.svg" 
                 alt="RoverPass Logo" 
                 className="w-full h-full object-contain group-hover:opacity-80 transition-opacity duration-300" 
               />
             </div>
-          </SmartLink>
+          </Link>
         </div>
 
         {isMobile ? (
