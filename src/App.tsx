@@ -34,19 +34,66 @@ import { AdminRoute } from "@/components/admin/AdminRoute";
 
 const queryClient = new QueryClient();
 
-// Configuración de la URL base para rutas absolutas
-const BASE_PATH = "https://roverpass.com/rv-parks-for-sale";
+// Configuraciones para rutas
+const DOMAIN = "https://roverpass.com";
+const PATH_PREFIX = "/rv-parks-for-sale";
+
+// Detectar si estamos en un entorno que requiere redirección externa
+const isExternalRedirectRequired = () => {
+  // En desarrollo local o en roverpass.com, no redireccionamos
+  const isLocalhost = window.location.hostname === 'localhost' || 
+                      window.location.hostname === '127.0.0.1';
+  const isTargetDomain = window.location.hostname === 'roverpass.com';
+  
+  return !isLocalhost && !isTargetDomain;
+};
 
 // Función para generar URLs absolutas
-const absoluteUrl = (path: string): string => {
-  // Si la ruta ya empieza con la base, no la agregamos de nuevo
-  if (path.startsWith(BASE_PATH)) {
-    return path;
-  }
-  
+export const absoluteUrl = (path: string): string => {
   // Asegurarse de que la ruta comience con /
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return `${BASE_PATH}${normalizedPath}`;
+  
+  // Para enlaces internos en React Router
+  return `${PATH_PREFIX}${normalizedPath}`;
+};
+
+// Función para generar URLs completas con dominio
+export const fullUrl = (path: string): string => {
+  const url = absoluteUrl(path);
+  return `${DOMAIN}${url}`;
+};
+
+// Componente de redirección inteligente que envía al usuario a la URL externa
+const ExternalRedirect = ({ to }: { to: string }) => {
+  useEffect(() => {
+    window.location.href = fullUrl(to);
+  }, [to]);
+  
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center">
+      <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
+      <p className="mt-4 text-gray-600">Redirecting to RoverPass.com...</p>
+    </div>
+  );
+};
+
+// Componente para manejar clicks en enlaces y redirigir si es necesario
+const LinkWrapper = ({ to, children }: { to: string, children: React.ReactNode }) => {
+  const handleClick = (e: React.MouseEvent) => {
+    if (isExternalRedirectRequired()) {
+      e.preventDefault();
+      window.location.href = fullUrl(to);
+    }
+  };
+  
+  return (
+    <a 
+      href={isExternalRedirectRequired() ? fullUrl(to) : absoluteUrl(to)}
+      onClick={handleClick}
+    >
+      {children}
+    </a>
+  );
 };
 
 // Route handling component
@@ -54,15 +101,21 @@ const AppRoutes = () => {
   const { user, loading, isAdmin, roles } = useAuth();
   const location = useLocation();
   
+  // Si necesitamos redirección externa y no estamos en la ruta raíz, redirigir
+  if (isExternalRedirectRequired() && location.pathname !== PATH_PREFIX && location.pathname !== `${PATH_PREFIX}/`) {
+    return <ExternalRedirect to={location.pathname.replace(PATH_PREFIX, '')} />;
+  }
+  
   // Detect admin routes
-  const isAdminRoute = location.pathname.startsWith(`${BASE_PATH}/admin`);
+  const isAdminRoute = location.pathname.startsWith('/admin') || 
+                       location.pathname.startsWith(`${PATH_PREFIX}/admin`);
   
   // Debug logging
   useEffect(() => {
     console.log(`[Router] Route changed to: ${location.pathname}`);
     console.log(`[Router] Current auth state - User: ${user?.id || 'none'}`);
     console.log(`[Router] Is admin: ${isAdmin}, Roles: ${roles?.join(', ') || 'none'}`);
-    console.log(`[Router] Base path: ${BASE_PATH}`);
+    console.log(`[Router] External redirect required: ${isExternalRedirectRequired()}`);
   }, [location.pathname, user, isAdmin, roles]);
   
   // Show loader during authentication verification
@@ -151,7 +204,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter basename={BASE_PATH}>
+        <BrowserRouter basename={PATH_PREFIX}>
           <AppRoutes />
         </BrowserRouter>
       </TooltipProvider>
@@ -159,6 +212,4 @@ const App = () => (
   </QueryClientProvider>
 );
 
-// Exportar absoluteUrl para que pueda ser utilizado en otros componentes
-export { absoluteUrl };
 export default App;

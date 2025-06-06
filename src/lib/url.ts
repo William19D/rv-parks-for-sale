@@ -1,39 +1,44 @@
-// Configuración de la URL base para rutas absolutas
-const BASE_PATH = "/rv-parks-for-sale";
+// Configuraciones para rutas
 const DOMAIN = "https://roverpass.com";
+const PATH_PREFIX = "/rv-parks-for-sale";
 
-/**
- * Genera una URL absoluta basada en la ruta base configurada
- * @param path Ruta relativa que se convertirá en absoluta
- * @returns URL relativa con el prefijo de ruta base
- */
+// Detectar si estamos en un entorno que requiere redirección externa
+export const isExternalRedirectRequired = () => {
+  // En desarrollo local o en roverpass.com, no redireccionamos
+  const isLocalhost = window.location.hostname === 'localhost' || 
+                      window.location.hostname === '127.0.0.1';
+  const isTargetDomain = window.location.hostname === 'roverpass.com';
+  
+  return !isLocalhost && !isTargetDomain;
+};
+
+// Función para generar URLs absolutas para React Router (relativas al basename)
 export const absoluteUrl = (path: string): string => {
-  // Si la ruta ya empieza con la base, no la agregamos de nuevo
-  if (path.startsWith(BASE_PATH)) {
-    return path;
+  // Si la ruta ya empieza con el prefijo, quitarlo para evitar duplicación
+  let processedPath = path;
+  if (processedPath.startsWith(PATH_PREFIX)) {
+    processedPath = processedPath.substring(PATH_PREFIX.length);
   }
   
   // Asegurarse de que la ruta comience con /
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return `${BASE_PATH}${normalizedPath}`;
+  const normalizedPath = processedPath.startsWith('/') ? processedPath : `/${processedPath}`;
+  
+  // Para uso dentro de React Router, devolver sin PATH_PREFIX
+  return normalizedPath;
 };
 
-/**
- * Genera una URL completa con dominio
- * @param path Ruta relativa que se convertirá en absoluta
- * @returns URL completa con dominio
- */
+// Función para generar URLs completas con dominio
 export const fullUrl = (path: string): string => {
-  const url = absoluteUrl(path);
-  return `${DOMAIN}${url}`;
+  const normalizedPath = absoluteUrl(path);
+  return `${DOMAIN}${PATH_PREFIX}${normalizedPath}`;
 };
 
-/**
- * Determina si se debe usar un enlace externo en lugar de React Router
- */
-export const shouldUseExternalLink = (): boolean => {
-  // Verificar si estamos en production o si el dominio actual no es roverpass.com
-  return window.location.hostname !== 'roverpass.com' && 
-         window.location.hostname !== 'localhost' &&
-         !window.location.hostname.includes('127.0.0.1');
+// Función para hacer clic en enlaces que puede redirigir externamente
+export const handleLinkClick = (e: React.MouseEvent, to: string) => {
+  if (isExternalRedirectRequired()) {
+    e.preventDefault();
+    window.location.href = fullUrl(to);
+    return true;
+  }
+  return false;
 };
