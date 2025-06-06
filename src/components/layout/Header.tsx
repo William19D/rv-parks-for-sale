@@ -17,6 +17,18 @@ import { cn } from "@/lib/utils";
 // Importar el logo directamente
 import logoImage from '@/assets/logo.svg';
 
+// URL base para rutas absolutas
+const BASE_URL = import.meta.env.PROD 
+  ? "https://preview--park-sell-rover.lovable.app" 
+  : "";
+
+// Función para generar rutas absolutas
+const absoluteUrl = (path: string): string => {
+  // Asegurarse de que la ruta comience con / y unirla con la URL base
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${BASE_URL}${normalizedPath}`;
+};
+
 // Definir el tipo para los elementos de navegación
 interface NavItem {
   name: string;
@@ -94,7 +106,7 @@ const NavItemComponent = memo(({ item, closeDropdowns }: {
   return (
     <div className="relative group">
       <NavLink
-        to={item.path}
+        to={absoluteUrl(item.path)}
         className={cn(
           "px-2 py-2 text-sm font-medium transition-colors flex items-center",
           active ? "text-[#f74f4f]" : "text-gray-700 hover:text-[#f74f4f]"
@@ -131,7 +143,7 @@ const MobileNavItem = memo(({ item, setMenuOpen }: {
   return (
     <div>
       <NavLink
-        to={item.path}
+        to={absoluteUrl(item.path)}
         className={cn(
           "flex items-center py-2 px-3 rounded-md group",
           active ? "bg-gray-100 text-[#f74f4f]" : "hover:bg-gray-100"
@@ -243,7 +255,7 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
         {isMobile ? (
           <div className="space-y-2">
             <Link 
-              to="/login" 
+              to={absoluteUrl("/login")} 
               onClick={() => { 
                 setMenuOpen(false);
                 window.scrollTo({ top: 0, behavior: "instant" }); 
@@ -254,7 +266,7 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
               </Button>
             </Link>
             <Link 
-              to="/register" 
+              to={absoluteUrl("/register")} 
               onClick={() => { 
                 setMenuOpen(false);
                 window.scrollTo({ top: 0, behavior: "instant" }); 
@@ -268,7 +280,7 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
         ) : (
           <div className="flex items-center space-x-2">
             <Link 
-              to="/login" 
+              to={absoluteUrl("/login")} 
               onClick={() => window.scrollTo({ top: 0, behavior: "instant" })}
             >
               <Button variant="ghost" size="sm">
@@ -276,7 +288,7 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
               </Button>
             </Link>
             <Link 
-              to="/register" 
+              to={absoluteUrl("/register")} 
               onClick={() => window.scrollTo({ top: 0, behavior: "instant" })}
             >
               <Button 
@@ -404,7 +416,7 @@ export const Header = memo(() => {
       <div className="container mx-auto px-4 flex items-center justify-between">
         <div className="flex items-center">
           <Link 
-            to="/" 
+            to={absoluteUrl("/")} 
             className="flex items-center group" 
             onClick={() => {
               closeDropdowns();
