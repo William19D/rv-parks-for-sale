@@ -13,10 +13,83 @@ import {
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { absoluteUrl } from "@/lib/url";
+import { absoluteUrl, fullUrl, shouldUseExternalLink } from "@/lib/url";
 
 // Importar el logo directamente
 import logoImage from '@/assets/logo.svg';
+
+// Componente de enlace que decide si usar Link de React Router o un enlace externo <a>
+const SmartLink = memo(({ to, children, className = "", onClick = () => {}, ...props }: {
+  to: string;
+  children: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+  [key: string]: any;
+}) => {
+  // Determinar si necesitamos un enlace externo
+  const useExternalLink = shouldUseExternalLink();
+  
+  if (useExternalLink) {
+    const externalUrl = fullUrl(to);
+    return (
+      <a 
+        href={externalUrl} 
+        className={className}
+        onClick={(e) => {
+          onClick();
+        }}
+        {...props}
+      >
+        {children}
+      </a>
+    );
+  }
+  
+  return (
+    <Link 
+      to={absoluteUrl(to)} 
+      className={className}
+      onClick={onClick}
+      {...props}
+    >
+      {children}
+    </Link>
+  );
+});
+
+// Componente de NavLink inteligente
+const SmartNavLink = memo(({ to, children, className, ...props }: {
+  to: string;
+  children: React.ReactNode;
+  className: string | ((props: { isActive: boolean; isPending: boolean }) => string);
+  [key: string]: any;
+}) => {
+  const useExternalLink = shouldUseExternalLink();
+  
+  if (useExternalLink) {
+    const externalUrl = fullUrl(to);
+    const location = useLocation();
+    // Determinar si está activo
+    const isActive = location.pathname.includes(to);
+    
+    // Si className es una función
+    const classNameValue = typeof className === 'function' 
+      ? className({ isActive, isPending: false }) 
+      : className;
+    
+    return (
+      <a href={externalUrl} className={classNameValue} {...props}>
+        {children}
+      </a>
+    );
+  }
+  
+  return (
+    <NavLink to={absoluteUrl(to)} className={className} {...props}>
+      {children}
+    </NavLink>
+  );
+});
 
 // Definir el tipo para los elementos de navegación
 interface NavItem {
@@ -102,11 +175,11 @@ const NavItemComponent = memo(({ item, closeDropdowns }: {
 
   return (
     <div className="relative group">
-      <NavLink
-        to={absoluteUrl(item.path)}
-        className={cn(
+      <SmartNavLink
+        to={item.path}
+        className={({ isActive }) => cn(
           "px-2 py-2 text-sm font-medium transition-colors flex items-center",
-          active ? "text-[#f74f4f]" : "text-gray-700 hover:text-[#f74f4f]"
+          (isActive || active) ? "text-[#f74f4f]" : "text-gray-700 hover:text-[#f74f4f]"
         )}
         onClick={handleClick}
       >
@@ -116,7 +189,7 @@ const NavItemComponent = memo(({ item, closeDropdowns }: {
           "absolute bottom-0 left-0 h-0.5 bg-[#f74f4f] transition-all duration-300",
           active ? "w-full" : "w-0 group-hover:w-full"
         )}></span>
-      </NavLink>
+      </SmartNavLink>
     </div>
   );
 });
@@ -139,11 +212,11 @@ const MobileNavItem = memo(({ item, setMenuOpen }: {
 
   return (
     <div>
-      <NavLink
-        to={absoluteUrl(item.path)}
-        className={cn(
+      <SmartNavLink
+        to={item.path}
+        className={({ isActive }) => cn(
           "flex items-center py-2 px-3 rounded-md group",
-          active ? "bg-gray-100 text-[#f74f4f]" : "hover:bg-gray-100"
+          (isActive || active) ? "bg-gray-100 text-[#f74f4f]" : "hover:bg-gray-100"
         )}
         onClick={handleClick}
       >
@@ -154,7 +227,7 @@ const MobileNavItem = memo(({ item, setMenuOpen }: {
         )}>
           {item.name}
         </span>
-      </NavLink>
+      </SmartNavLink>
     </div>
   );
 });
@@ -251,8 +324,8 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
         {/* Contenido para usuario no autenticado */}
         {isMobile ? (
           <div className="space-y-2">
-            <Link 
-              to={absoluteUrl("/login")} 
+            <SmartLink 
+              to="/login" 
               onClick={() => { 
                 setMenuOpen(false);
                 window.scrollTo({ top: 0, behavior: "instant" }); 
@@ -261,9 +334,9 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
               <Button variant="outline" className="w-full">
                 Sign In
               </Button>
-            </Link>
-            <Link 
-              to={absoluteUrl("/register")} 
+            </SmartLink>
+            <SmartLink 
+              to="/register" 
               onClick={() => { 
                 setMenuOpen(false);
                 window.scrollTo({ top: 0, behavior: "instant" }); 
@@ -272,20 +345,20 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
               <Button className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]">
                 Register
               </Button>
-            </Link>
+            </SmartLink>
           </div>
         ) : (
           <div className="flex items-center space-x-2">
-            <Link 
-              to={absoluteUrl("/login")} 
+            <SmartLink 
+              to="/login" 
               onClick={() => window.scrollTo({ top: 0, behavior: "instant" })}
             >
               <Button variant="ghost" size="sm">
                 Sign In
               </Button>
-            </Link>
-            <Link 
-              to={absoluteUrl("/register")} 
+            </SmartLink>
+            <SmartLink 
+              to="/register" 
               onClick={() => window.scrollTo({ top: 0, behavior: "instant" })}
             >
               <Button 
@@ -294,7 +367,7 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
               >
                 Register
               </Button>
-            </Link>
+            </SmartLink>
           </div>
         )}
       </>
@@ -412,8 +485,8 @@ export const Header = memo(() => {
     >
       <div className="container mx-auto px-4 flex items-center justify-between">
         <div className="flex items-center">
-          <Link 
-            to={absoluteUrl("/")} 
+          <SmartLink 
+            to="/" 
             className="flex items-center group" 
             onClick={() => {
               closeDropdowns();
@@ -431,7 +504,7 @@ export const Header = memo(() => {
                 className="w-full h-full object-contain group-hover:opacity-80 transition-opacity duration-300" 
               />
             </div>
-          </Link>
+          </SmartLink>
         </div>
 
         {isMobile ? (

@@ -5,7 +5,7 @@ import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  // Configurar la base para que coincida con la ruta en roverpass.com
+  // Base consistente con las URLs que estamos usando
   base: '/rv-parks-for-sale/',
   server: {
     host: "::",
