@@ -34,6 +34,18 @@ import { AdminRoute } from "@/components/admin/AdminRoute";
 
 const queryClient = new QueryClient();
 
+// URL base para rutas absolutas
+const BASE_URL = import.meta.env.PROD 
+  ? "https://preview--park-sell-rover.lovable.app" 
+  : "";
+
+// Función para generar rutas absolutas
+const absoluteUrl = (path: string): string => {
+  // Asegurarse de que la ruta comience con / y unirla con la URL base
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${BASE_URL}${normalizedPath}`;
+};
+
 // Route handling component
 const AppRoutes = () => {
   const { user, loading, isAdmin, roles } = useAuth();
@@ -46,7 +58,8 @@ const AppRoutes = () => {
   useEffect(() => {
     console.log(`[Router] Route changed to: ${location.pathname}`);
     console.log(`[Router] Current auth state - User: ${user?.id || 'none'}`);
-    console.log(`[Router] Is admin: ${isAdmin}, Roles: ${roles.join(', ')}`);
+    console.log(`[Router] Is admin: ${isAdmin}, Roles: ${roles?.join(', ') || 'none'}`);
+    console.log(`[Router] Base URL: ${BASE_URL}`);
   }, [location.pathname, user, isAdmin, roles]);
   
   // Show loader during authentication verification
@@ -94,26 +107,26 @@ const AppRoutes = () => {
         
         {/* Protected routes - require authentication */}
         <Route path="/broker/dashboard" element={
-          user ? <BrokerDashboard /> : <Navigate to="/login" state={{ from: location }} replace />
+          user ? <BrokerDashboard /> : <Navigate to={absoluteUrl("/login")} state={{ from: location }} replace />
         } />
         <Route path="/listings/new" element={
-          user ? <AddListing /> : <Navigate to="/login" state={{ from: location }} replace />
+          user ? <AddListing /> : <Navigate to={absoluteUrl("/login")} state={{ from: location }} replace />
         } />
         <Route path="/listings/:id/edit" element={
-          user ? (ListingEdit ? <ListingEdit /> : <div>Loading editor...</div>) : <Navigate to="/login" state={{ from: location }} replace />
+          user ? (ListingEdit ? <ListingEdit /> : <div>Loading editor...</div>) : <Navigate to={absoluteUrl("/login")} state={{ from: location }} replace />
         } />
         
         {/* Authentication routes */}
         <Route path="/login" element={
           user ? (
-            isAdmin ? <Navigate to="/admin/dashboard" replace /> : <Navigate to="/" replace />
+            isAdmin ? <Navigate to={absoluteUrl("/admin/dashboard")} replace /> : <Navigate to={absoluteUrl("/")} replace />
           ) : <Login />
         } />
         <Route path="/register" element={
-          user ? <Navigate to="/" replace /> : <Register />
+          user ? <Navigate to={absoluteUrl("/")} replace /> : <Register />
         } />
         <Route path="/forgot-password" element={
-          user ? <Navigate to="/" replace /> : <ForgotPassword />
+          user ? <Navigate to={absoluteUrl("/")} replace /> : <ForgotPassword />
         } />
         
         {/* Auth processing routes */}
@@ -135,7 +148,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter basename={BASE_URL}>
           <AppRoutes />
         </BrowserRouter>
       </TooltipProvider>
