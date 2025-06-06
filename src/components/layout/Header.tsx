@@ -13,21 +13,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { absoluteUrl } from "@/lib/url";
 
 // Importar el logo directamente
 import logoImage from '@/assets/logo.svg';
-
-// URL base para rutas absolutas
-const BASE_URL = import.meta.env.PROD 
-  ? "https://preview--park-sell-rover.lovable.app" 
-  : "";
-
-// Función para generar rutas absolutas
-const absoluteUrl = (path: string): string => {
-  // Asegurarse de que la ruta comience con / y unirla con la URL base
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return `${BASE_URL}${normalizedPath}`;
-};
 
 // Definir el tipo para los elementos de navegación
 interface NavItem {
@@ -73,18 +62,26 @@ export const HeaderSpacer = memo(() => {
 
 // Función para determinar si una ruta está activa
 const isRouteActive = (item: NavItem, pathname: string): boolean => {
+  // Eliminar el prefijo BASE_PATH para la comparación de rutas
+  const BASE_PATH = "/rv-parks-for-sale";
+  const normalizedPathname = pathname.startsWith(BASE_PATH) 
+    ? pathname.substring(BASE_PATH.length) || '/' 
+    : pathname;
+  
+  const itemPath = item.path;
+  
   // Si es una ruta exacta, solo debe coincidir perfectamente
   if (item.exact) {
-    return pathname === item.path;
+    return normalizedPathname === itemPath;
   }
   
   // Verificar si el path actual está en las rutas excluidas
-  if (item.exclude && item.exclude.some(route => pathname === route || pathname.startsWith(route))) {
+  if (item.exclude && item.exclude.some(route => normalizedPathname === route || normalizedPathname.startsWith(route))) {
     return false;
   }
   
   // Para rutas no exactas, verificar si coincide exactamente o si es una subruta
-  return pathname === item.path || (item.path !== '/' && pathname.startsWith(`${item.path}/`));
+  return normalizedPathname === itemPath || (itemPath !== '/' && normalizedPathname.startsWith(`${itemPath}/`));
 };
 
 // Componente memoizado para cada elemento de navegación
