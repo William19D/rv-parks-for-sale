@@ -16,7 +16,7 @@ interface AuthContextType {
   roles: AppRole[];
   permissions: AppPermission[];
   isAdmin: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: any | null }>;
+  signIn: (email: string, password: string, captchaToken?: string) => Promise<{ error: any | null }>;
   signUp: (email: string, password: string) => Promise<{ error: any | null; data: any | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: any | null }>;
@@ -217,18 +217,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       isMounted = false;
       subscription.unsubscribe();
+      clearTimeout(safetyTimeout);
     };
   }, []);
   
   // Sign in with email and password
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, captchaToken?: string) => {
     try {
       console.log(`[Auth] Starting login process for: ${email}`);
+      
+      // Prepare options with captchaToken if provided
+      const options: { captchaToken?: string } = {};
+      if (captchaToken) {
+        console.log('[Auth] Including captcha token in login');
+        options.captchaToken = captchaToken;
+      }
       
       // Authenticate with Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
+        options
       });
       
       if (error) {

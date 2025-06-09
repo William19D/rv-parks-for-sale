@@ -1,5 +1,4 @@
-
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,15 +7,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
+import { Loader2 } from "lucide-react";
+import HCaptcha from '@hcaptcha/react-hcaptcha';
+
+// Get hCaptcha site key from environment variables
+const HCAPTCHA_SITE_KEY = import.meta.env.VITE_HCAPTCHA_SITE_KEY || '10000000-ffff-ffff-ffff-000000000001';
 
 const Register = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [phone, setPhone] = useState("");
-  const [firstName, setFirstName] = useState(""); // Nuevo estado para nombre
-  const [lastName, setLastName] = useState(""); // Nuevo estado para apellido
+  const [firstName, setFirstName] = useState(""); 
+  const [lastName, setLastName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRef = useRef<HCaptcha | null>(null);
+  
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -36,6 +43,21 @@ const Register = () => {
     }
     
     setPhone(formattedPhone);
+  };
+
+  // Handle hCaptcha verification
+  const handleVerificationSuccess = (token: string) => {
+    console.log('[Register] hCaptcha verification successful');
+    setCaptchaToken(token);
+  };
+
+  const handleCaptchaError = () => {
+    console.error('[Register] hCaptcha verification failed');
+    toast({
+      title: "Verification Error",
+      description: "Failed to verify that you're not a robot. Please try again.",
+      variant: "destructive",
+    });
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -134,23 +156,40 @@ const Register = () => {
       return;
     }
 
+    // Check if captcha is completed
+    if (!captchaToken) {
+      toast({
+        title: "Verification required",
+        description: "Please complete the captcha verification",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          first_name: firstName,
-          last_name: lastName,
-          phone_number: phone
-        },
-        // Redirigir al callback de auth para que podamos interceptarlo
-        emailRedirectTo: `${window.location.origin}/auth/callback`
-      }
-    });
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            first_name: firstName,
+            last_name: lastName,
+            phone_number: phone
+          },
+          // Include captcha token in the registration
+          captchaToken,
+          // Redirigir al callback de auth para que podamos interceptarlo
+          emailRedirectTo: `${window.location.origin}/auth/callback`
+        }
+      });
+      
       if (error) {
+        // Reset captcha if registration fails
+        captchaRef.current?.resetCaptcha();
+        setCaptchaToken(null);
+        
         toast({
           title: "Error",
           description: error.message,
@@ -161,6 +200,10 @@ const Register = () => {
         if (data.user) {
           // Verificamos si ya existe (para detectar emails ya registrados)
           if (data.user.identities && data.user.identities.length === 0) {
+            // Reset captcha if email already registered
+            captchaRef.current?.resetCaptcha();
+            setCaptchaToken(null);
+            
             toast({
               title: "Email already registered",
               description: "This email is already registered. Please login or use a different email.",
@@ -204,6 +247,11 @@ const Register = () => {
       }
     } catch (error) {
       console.error('Registration error:', error);
+      
+      // Reset captcha on error
+      captchaRef.current?.resetCaptcha();
+      setCaptchaToken(null);
+      
       toast({
         title: "Error",
         description: "Configuration error. Check your Supabase connection.",
@@ -214,7 +262,6 @@ const Register = () => {
     }
   };
 
-  // Resto del componente igual
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
@@ -295,12 +342,29 @@ const Register = () => {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                 />
               </div>
+              
+              {/* hCaptcha Component */}
+              <div className="flex justify-center py-2">
+                <HCaptcha
+                  ref={captchaRef}
+                  sitekey={HCAPTCHA_SITE_KEY}
+                  onVerify={handleVerificationSuccess}
+                  onError={handleCaptchaError}
+                  onExpire={() => setCaptchaToken(null)}
+                />
+              </div>
+              
               <Button 
                 type="submit" 
                 className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]"
-                disabled={loading}
+                disabled={loading || !captchaToken}
               >
-                {loading ? "Creating account..." : "Create Account"}
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating account...
+                  </>
+                ) : "Create Account"}
               </Button>
             </form>
             <div className="mt-4 text-center">

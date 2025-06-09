@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,11 +8,18 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
 import { Loader2 } from "lucide-react";
+import HCaptcha from '@hcaptcha/react-hcaptcha';
+
+// Get hCaptcha site key from environment variables
+const HCAPTCHA_SITE_KEY = import.meta.env.VITE_HCAPTCHA_SITE_KEY || '10000000-ffff-ffff-ffff-000000000001';
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRef = useRef<HCaptcha | null>(null);
+  
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -37,6 +44,21 @@ const Login = () => {
     
     return () => clearTimeout(redirectTimeout);
   }, [user, isAdmin, roles, navigate, location.state]);
+  
+  // Handle hCaptcha verification
+  const handleVerificationSuccess = (token: string) => {
+    console.log('[Login] hCaptcha verification successful');
+    setCaptchaToken(token);
+  };
+
+  const handleCaptchaError = () => {
+    console.error('[Login] hCaptcha verification failed');
+    toast({
+      title: "Verification Error",
+      description: "Failed to verify that you're not a robot. Please try again.",
+      variant: "destructive",
+    });
+  };
   
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,16 +90,32 @@ const Login = () => {
       });
       return;
     }
+
+    // Check if captcha is completed
+    if (!captchaToken) {
+      toast({
+        title: "Verification required",
+        description: "Please complete the captcha verification",
+        variant: "destructive",
+      });
+      return;
+    }
     
     setLoading(true);
 
     try {
       console.log(`[Login] Attempting to sign in with: ${email}`);
       
-      const { error } = await signIn(email, password);
+      // Pass the captcha token to your signIn function
+      const { error } = await signIn(email, password, captchaToken);
 
       if (error) {
         console.error('[Login] Authentication error:', error);
+        
+        // Reset captcha if authentication fails
+        captchaRef.current?.resetCaptcha();
+        setCaptchaToken(null);
+        
         toast({
           title: "Login error",
           description: error.message || "Incorrect credentials",
@@ -99,6 +137,11 @@ const Login = () => {
       
     } catch (error: any) {
       console.error('[Login] Unexpected error:', error);
+      
+      // Reset captcha on error
+      captchaRef.current?.resetCaptcha();
+      setCaptchaToken(null);
+      
       toast({
         title: "Error",
         description: "An unexpected error occurred",
@@ -152,10 +195,22 @@ const Login = () => {
                   </Link>
                 </div>
               </div>
+              
+              {/* hCaptcha Component */}
+              <div className="flex justify-center py-2">
+                <HCaptcha
+                  ref={captchaRef}
+                  sitekey={HCAPTCHA_SITE_KEY}
+                  onVerify={handleVerificationSuccess}
+                  onError={handleCaptchaError}
+                  onExpire={() => setCaptchaToken(null)}
+                />
+              </div>
+              
               <Button 
                 type="submit" 
                 className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]"
-                disabled={loading}
+                disabled={loading || !captchaToken}
               >
                 {loading ? (
                   <>

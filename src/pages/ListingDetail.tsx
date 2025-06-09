@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { useParams, Link } from "react-router-dom";
@@ -36,6 +36,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import HCaptcha from '@hcaptcha/react-hcaptcha';
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Card, CardContent } from "@/components/ui/card";
+
+// Get hCaptcha site key from environment variables
+const HCAPTCHA_SITE_KEY = import.meta.env.VITE_HCAPTCHA_SITE_KEY || '10000000-ffff-ffff-ffff-000000000001';
 
 // Interface for broker information
 interface BrokerInfo {
@@ -45,6 +51,13 @@ interface BrokerInfo {
   company?: string;
   avatar?: string;
   phone?: string;
+  title?: string;
+  bio?: string;
+  website?: string;
+  experience?: number;
+  totalListings?: number;
+  joinedDate?: string;
+  verifiedStatus?: boolean;
 }
 
 // Interface for document type
@@ -89,9 +102,12 @@ interface ListingData {
   offering_memorandum_path?: string;
 }
 
-// Current user and date information
-const CURRENT_USER = "William19";
-const CURRENT_DATE = "2025-06-04 12:43:01";
+// Interface for the current user
+interface CurrentUser {
+  id: string;
+  email: string;
+  full_name?: string;
+}
 
 const ListingDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -104,6 +120,7 @@ const ListingDetail = () => {
   const [contactModalOpen, setContactModalOpen] = useState(false);
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   
   // Contact form state
   const [name, setName] = useState("");
@@ -112,7 +129,40 @@ const ListingDetail = () => {
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   
+  // hCaptcha state
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRef = useRef<HCaptcha | null>(null);
+  
   const { toast } = useToast();
+
+  // Fetch current authenticated user
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      
+      if (error) {
+        console.error("Error fetching current user:", error);
+        return;
+      }
+      
+      if (user) {
+        // If authenticated, get additional profile information
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+          
+        setCurrentUser({
+          id: user.id,
+          email: user.email || '',
+          full_name: profileData?.full_name || user.email?.split('@')[0] || ''
+        });
+      }
+    };
+    
+    fetchCurrentUser();
+  }, []);
   
   // Set default message when listing is loaded
   useEffect(() => {
@@ -120,6 +170,31 @@ const ListingDetail = () => {
       setMessage(`I'm interested in ${listing.title}. Please send me more information.`);
     }
   }, [listing]);
+  
+  // Handle hCaptcha verification
+  const handleVerificationSuccess = (token: string) => {
+    console.log('[Inquiry] hCaptcha verification successful');
+    setCaptchaToken(token);
+  };
+
+  const handleCaptchaError = () => {
+    console.error('[Inquiry] hCaptcha verification failed');
+    toast({
+      title: "Verification Error",
+      description: "Failed to verify that you're not a robot. Please try again.",
+      variant: "destructive",
+    });
+  };
+  
+  // Reset captcha when the modal is closed
+  useEffect(() => {
+    if (!contactModalOpen) {
+      setCaptchaToken(null);
+      if (captchaRef.current) {
+        captchaRef.current.resetCaptcha();
+      }
+    }
+  }, [contactModalOpen]);
   
   // Fetch documents separately to ensure we have the latest data
   useEffect(() => {
@@ -182,7 +257,18 @@ const ListingDetail = () => {
                 type: "image",
                 size: 2 * 1024 * 1024 // 2MB
               }
-            ]
+            ],
+            // Enhanced broker information
+            broker: {
+              ...mockListing.broker,
+              title: "Senior RV Park Specialist",
+              bio: "William is a specialist in RV Park and campground sales with over 10 years of experience in the industry. He focuses on high-value properties in the Southern states.",
+              website: "www.rvparkbroker.com",
+              experience: 10,
+              totalListings: 48,
+              joinedDate: "2018-03-15",
+              verifiedStatus: true
+            }
           };
           setListing(enhancedMockListing);
           setDocuments(enhancedMockListing.documents || []);
@@ -231,10 +317,15 @@ const ListingDetail = () => {
         
         // Fetch user info if user_id exists
         let brokerInfo: BrokerInfo = { 
-          id: CURRENT_USER,
-          name: CURRENT_USER,
+          id: "unknown",
+          name: "Unknown Broker",
           email: 'contact@example.com',
-          company: 'RV Park Specialists'
+          company: 'RV Park Specialists',
+          title: "RV Park Sales Agent",
+          experience: 5,
+          totalListings: 24,
+          joinedDate: new Date().toISOString(),
+          verifiedStatus: true
         };
         
         if (supabaseListing.user_id) {
@@ -246,12 +337,19 @@ const ListingDetail = () => {
             
           if (!userError && userData) {
             brokerInfo = {
-              id: userData.id || CURRENT_USER,
-              name: userData.full_name || CURRENT_USER,
+              id: userData.id || "unknown",
+              name: userData.full_name || "Unknown Broker",
               email: userData.email || 'contact@example.com',
               company: userData.company_name || 'RV Park Specialists',
               avatar: userData.avatar_url,
-              phone: userData.phone
+              phone: userData.phone,
+              title: userData.title || "RV Park Specialist",
+              bio: userData.bio || "Specialist in recreational property sales",
+              website: userData.website,
+              experience: userData.experience || 5,
+              totalListings: 24, // This would come from a separate query in a real app
+              joinedDate: userData.created_at,
+              verifiedStatus: userData.verified || true
             };
           }
         }
@@ -335,59 +433,83 @@ const ListingDetail = () => {
     }
   }, [id, toast]);
   
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setSubmitting(true);
-  
-  try {
-    // Save inquiry to database
-    const { data, error } = await supabase
-      .from('inquiry')
-      .insert([
-        { 
-          listing_id: Number(listing?.id), // Make sure it's a number if your ID is numeric
-          name,
-          email,
-          phone,
-          message
-        }
-      ]);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     
-    if (error) {
-      console.error('Error saving inquiry:', error);
+    // Check if captcha is completed
+    if (!captchaToken) {
+      toast({
+        title: "Verification required",
+        description: "Please complete the captcha verification",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setSubmitting(true);
+    
+    try {
+      // Save inquiry to database with captcha token
+      const { data, error } = await supabase
+        .from('inquiry')
+        .insert([
+          { 
+            listing_id: Number(listing?.id), // Make sure it's a number if your ID is numeric
+            name,
+            email,
+            phone,
+            message,
+            captcha_token: captchaToken, // Include captcha token in the request
+            created_at: new Date().toISOString()
+          }
+        ]);
+      
+      if (error) {
+        console.error('Error saving inquiry:', error);
+        
+        // Reset captcha if submission fails
+        captchaRef.current?.resetCaptcha();
+        setCaptchaToken(null);
+        
+        toast({
+          title: "Error",
+          description: "There was a problem sending your inquiry. Please try again.",
+          variant: "destructive",
+        });
+        setSubmitting(false);
+        return;
+      }
+      
+      // Show success message
+      toast({
+        title: "Inquiry Sent!",
+        description: `Your inquiry about ${listing?.title} has been sent. We'll contact you shortly.`,
+        duration: 5000,
+      });
+      
+      // Reset form and close modal
+      setSubmitting(false);
+      setName("");
+      setEmail("");
+      setPhone("");
+      setContactModalOpen(false);
+      
+    } catch (err) {
+      console.error('Exception in handleSubmit:', err);
+      
+      // Reset captcha on error
+      captchaRef.current?.resetCaptcha();
+      setCaptchaToken(null);
+      
       toast({
         title: "Error",
         description: "There was a problem sending your inquiry. Please try again.",
         variant: "destructive",
       });
       setSubmitting(false);
-      return;
     }
-    
-    // Show success message
-    toast({
-      title: "Inquiry Sent!",
-      description: `Your inquiry about ${listing?.title} has been sent. We'll contact you shortly.`,
-      duration: 5000,
-    });
-    
-    // Reset form and close modal
-    setSubmitting(false);
-    setName("");
-    setEmail("");
-    setPhone("");
-    setContactModalOpen(false);
-    
-  } catch (err) {
-    console.error('Exception in handleSubmit:', err);
-    toast({
-      title: "Error",
-      description: "There was a problem sending your inquiry. Please try again.",
-      variant: "destructive",
-    });
-    setSubmitting(false);
-  }
-};  
+  };
+  
   // Auto slide images
   useEffect(() => {
     if (!listing || isFullscreen) return;
@@ -588,7 +710,7 @@ const handleSubmit = async (e: React.FormEvent) => {
         </div>
       )}
       
-      {/* Contact Form Modal */}
+      {/* Contact Form Modal - UPDATED WITH HCAPTCHA */}
       <Dialog open={contactModalOpen} onOpenChange={setContactModalOpen}>
         <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden">
           <DialogHeader className="p-6 pb-2">
@@ -647,11 +769,23 @@ const handleSubmit = async (e: React.FormEvent) => {
                 <MessageSquare className="absolute left-3 top-3.5 h-4 w-4 text-gray-400" />
               </div>
               
+              {/* hCaptcha Component */}
+              <div className="flex justify-center py-2">
+                <HCaptcha
+                  ref={captchaRef}
+                  sitekey={HCAPTCHA_SITE_KEY}
+                  onVerify={handleVerificationSuccess}
+                  onError={handleCaptchaError}
+                  onExpire={() => setCaptchaToken(null)}
+                  size="normal"
+                />
+              </div>
+              
               <Button 
                 type="submit" 
                 className="w-full bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
                 size="lg"
-                disabled={submitting}
+                disabled={submitting || !captchaToken}
               >
                 {submitting ? (
                   <>
@@ -674,8 +808,6 @@ const handleSubmit = async (e: React.FormEvent) => {
           </div>
         </DialogContent>
       </Dialog>
-      
-      {/* Rest of component remains the same until the Files Section */}
       
       {/* Breadcrumb */}
       <div className="bg-white border-b py-3 shadow-sm">
@@ -701,6 +833,10 @@ const handleSubmit = async (e: React.FormEvent) => {
                 </Badge>
                 <Badge variant="outline" className="bg-white text-gray-600 border-gray-300">
                   Listed {listingDate}
+                </Badge>
+                {/* Added status badge */}
+                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                  Active
                 </Badge>
               </div>
               <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">{listing.title}</h1>
@@ -872,7 +1008,7 @@ const handleSubmit = async (e: React.FormEvent) => {
               </div>
             </div>
 
-            {/* UPDATED: Files Section with direct database integration */}
+            {/* Files Section with direct database integration */}
             <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-200">
               <div className="p-6 border-b border-gray-100">
                 <h2 className="text-xl font-bold">Property Documents</h2>
@@ -966,8 +1102,6 @@ const handleSubmit = async (e: React.FormEvent) => {
                 )}
               </div>
             </div>
-            
-            {/* Rest of the component remains unchanged */}
 
             {/* Detailed Information */}
             <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-200">
@@ -1149,19 +1283,37 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
           
           {/* Sidebar - 1/3 width on desktop */}
           <div className="space-y-6">
-            {/* Single "Interested in this property?" button */}
-            <div className="bg-gradient-to-br from-[#f74f4f] to-[#ff7a45] rounded-xl shadow-md">
-              <div className="p-6">
-                <h3 className="text-xl font-bold text-white mb-4">Interested in this property?</h3>
+            {/* COMBINED CONTACT CARD with broker information */}
+            <Card className="overflow-hidden border-gray-200 bg-gradient-to-br from-[#f74f4f] to-[#ff7a45] text-white">
+              <CardContent className="p-6">
+                <div className="flex flex-col items-center text-center mb-6">
+                  <Avatar className="h-20 w-20 mb-3 border-2 border-white/30">
+                    {listing.broker?.avatar ? (
+                      <AvatarImage src={listing.broker.avatar} alt={listing.broker.name} />
+                    ) : (
+                      <AvatarFallback className="bg-white/20 text-white text-lg">
+                        {listing.broker?.name?.charAt(0) || 'B'}
+                      </AvatarFallback>
+                    )}
+                  </Avatar>
+                  <div className="space-y-1">
+                    <h3 className="font-bold text-xl text-white">{listing.broker?.name || "Broker"}</h3>
+                    {listing.broker?.company && (
+                      <p className="text-white/80">{listing.broker.company}</p>
+                    )}
+                  </div>
+                </div>
+                
                 <Button 
                   className="w-full bg-white hover:bg-white/90 text-[#f74f4f]"
                   size="lg"
                   onClick={() => setContactModalOpen(true)}
                 >
-                  Request Information
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Contact About This Property
                 </Button>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
             
             {/* RoverPass CTA for new owners */}
             <div className="bg-purple-900 p-6 rounded-lg text-white">
@@ -1189,7 +1341,7 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
                   Guest management platform
                 </div>
               </div>
-              <Button asChild className="w-full bg-white text-purple-900 hover:bg-gray-100">
+                            <Button asChild className="w-full bg-white text-purple-900 hover:bg-gray-100">
                 <a href="https://www.roverpass.com/p/campground-reservation-software" target="_blank" rel="noopener noreferrer">
                   Learn More
                 </a>
