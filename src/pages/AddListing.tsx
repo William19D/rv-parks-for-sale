@@ -25,6 +25,7 @@ import { MapContainer, TileLayer, Marker, Popup, useMapEvents, useMap } from 're
 import { Icon, LatLng } from 'leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import HCaptcha from '@hcaptcha/react-hcaptcha';
 
 // Fix Leaflet's default icon path issues in production
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -38,6 +39,9 @@ L.Icon.Default.mergeOptions({
   iconUrl: markerIcon,
   shadowUrl: markerShadow
 });
+
+// hCaptcha site key from environment variables
+const HCAPTCHA_SITE_KEY = import.meta.env.VITE_HCAPTCHA_SITE_KEY || '10000000-ffff-ffff-ffff-000000000001';
 
 // Enhanced validation schema with NUMERIC CONSTRAINTS and address field added
 const listingSchema = z.object({
@@ -147,6 +151,12 @@ const listingSchema = z.object({
     
   location_set: z
     .boolean()
+    .optional(),
+    
+  // Add captcha validation field
+  captchaToken: z
+    .string()
+    .min(1, { message: "Please complete the CAPTCHA verification" })
     .optional()
 });
 
@@ -161,10 +171,15 @@ interface ImageUpload {
   error?: string;
 }
 
-// PDF upload interface
+// PDF upload interface - enhanced with fields matching listing_documents schema
 interface PDFUpload {
   file: File;
   id: string;
+  name: string; // Match column name in listing_documents
+  description?: string; // Match column name in listing_documents
+  file_type: string; // Match column name in listing_documents
+  file_size: number; // Match column name in listing_documents
+  is_primary?: boolean; // Match column name in listing_documents
   progress: number;
   uploaded?: boolean;
   path?: string;
@@ -520,22 +535,21 @@ const LocationFinder: React.FC<LocationFinderProps> = ({ city, state, onLocation
   return null;
 };
 
-// FIXED: Simplified function that just checks if a bucket exists
+// FIXED: Properly check if bucket exists without trying to create it
 const checkBucketExists = async (bucketName: string): Promise<boolean> => {
   try {
-    // Check if bucket exists
+    // Only check if bucket exists, don't try to create it
     const { data: buckets, error } = await supabase.storage.listBuckets();
     
     if (error) {
-      console.error("Error checking buckets:", error);
+      console.error(`Error checking if bucket ${bucketName} exists:`, error);
       return false;
     }
     
     // Return true if the bucket exists
     return buckets?.some(b => b.name === bucketName) || false;
-    
   } catch (e) {
-    console.error("Error checking bucket:", e);
+    console.error(`Error checking bucket ${bucketName}:`, e);
     return false;
   }
 };
@@ -553,6 +567,10 @@ const AddListing = () => {
   const [searchTriggered, setSearchTriggered] = useState(false);
   const [addressSearchTriggered, setAddressSearchTriggered] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  
+  // Add state for captcha
+  const [captchaToken, setCaptchaToken] = useState("");
+  const captchaRef = useRef<HCaptcha | null>(null);
   
   // Fix for z-index issues with dropdowns
   useEffect(() => {
@@ -573,12 +591,19 @@ const AddListing = () => {
     };
   }, []);
   
-  // Check if storage bucket exists when component mounts
+  // Check storage buckets when component mounts
   useEffect(() => {
     const initializeStorage = async () => {
-      const bucketExists = await checkBucketExists('listing-images');
-      if (!bucketExists) {
-        console.log("Note: The 'listing-images' bucket doesn't exist. You may need to create it in the Supabase admin dashboard.");
+      try {
+        // Check if required buckets exist
+        const imagesBucketExists = await checkBucketExists('listing-images');
+        const documentsBucketExists = await checkBucketExists('listing-documents');
+        
+        if (!imagesBucketExists || !documentsBucketExists) {
+          console.warn("Required storage buckets don't exist. Contact administrator if needed.");
+        }
+      } catch (error) {
+        console.error("Error checking storage buckets:", error);
       }
     };
     
@@ -602,7 +627,8 @@ const AddListing = () => {
       amenities: {},
       latitude: undefined,
       longitude: undefined,
-      location_set: false
+      location_set: false,
+      captchaToken: ""
     },
     mode: "onChange",
   });
@@ -612,6 +638,22 @@ const AddListing = () => {
   const state = watch('state');
   const address = watch('address');
   const propertyType = watch('propertyType');
+
+  // Watch for address changes to auto-update the map
+  useEffect(() => {
+    const addressValue = form.getValues('address');
+    const cityValue = form.getValues('city');
+    const stateValue = form.getValues('state');
+    
+    // Check if we have enough info to try to find the location
+    if (addressValue && addressValue.length > 5 && cityValue && stateValue) {
+      const timeout = setTimeout(() => {
+        handleAddressSearch();
+      }, 1500); // Delay to avoid too many API calls while typing
+      
+      return () => clearTimeout(timeout);
+    }
+  }, [address, city, state]);
 
   // Number input formatting helper
   const formatNumberInput = (value: string, allowDecimal: boolean = true) => {
@@ -692,6 +734,12 @@ const AddListing = () => {
       return;
     }
     
+    // Show searching toast
+    toast({
+      title: "Searching...",
+      description: "Looking up the location coordinates"
+    });
+    
     try {
       const query = `${currentCity}, ${currentState}, USA`;
       const response = await fetch(
@@ -709,7 +757,8 @@ const AddListing = () => {
         
         toast({
           title: "Location found",
-          description: `Found coordinates for ${currentCity}, ${currentState}`
+          description: `Found coordinates for ${currentCity}, ${currentState}`,
+          variant: "default"
         });
       } else {
         toast({
@@ -728,7 +777,7 @@ const AddListing = () => {
     }
   };
 
-  // NEW: Manual location search function by full address
+  // Enhanced address search with better feedback
   const handleAddressSearch = async () => {
     const currentAddress = form.getValues('address');
     const currentCity = form.getValues('city');
@@ -742,6 +791,12 @@ const AddListing = () => {
       });
       return;
     }
+    
+    // Show searching toast
+    toast({
+      title: "Searching...",
+      description: "Looking up the address coordinates"
+    });
     
     try {
       // Create a search query with whatever information is available
@@ -765,7 +820,8 @@ const AddListing = () => {
         
         toast({
           title: "Location found",
-          description: `Found coordinates for the provided address`
+          description: `Found coordinates for the provided address`,
+          variant: "default"
         });
       } else {
         toast({
@@ -782,6 +838,12 @@ const AddListing = () => {
         description: "An error occurred while searching for the address. Please try again."
       });
     }
+  };
+  
+  // Handle hCaptcha verification
+  const handleVerificationSuccess = (token: string) => {
+    setCaptchaToken(token);
+    form.setValue('captchaToken', token);
   };
 
   // File selection handler
@@ -845,173 +907,173 @@ const AddListing = () => {
     setImages(images.filter(image => image.id !== id));
   };
 
-  // FIXED: Updated upload function that doesn't try to create buckets
+  // Upload images to Supabase - keeping this as is since it works
   const uploadImagesToSupabase = async (listingId: number) => {
-  if (!user) {
-    console.error("User not authenticated");
-    toast({
-      variant: "destructive",
-      title: "Authentication error",
-      description: "You must be logged in to upload images"
-    });
-    return false;
-  }
-
-  // Check if we have images to upload
-  if (images.length === 0) {
-    console.log("No images to upload");
-    return true; // Return success because there's nothing to upload
-  }
-
-  setUploadStatus("Uploading images...");
-  let successCount = 0;
-  let errorCount = 0;
-  
-  for (let i = 0; i < images.length; i++) {
-    const image = images[i];
-    const imageNumber = i + 1;
-    setUploadStatus(`Uploading image ${imageNumber} of ${images.length}...`);
-    
-    try {
-      // Show start of upload in UI
-      setImages(prevImages => 
-        prevImages.map(img => 
-          img.id === image.id ? { ...img, progress: 10 } : img
-        )
-      );
-      
-      // Create a unique, clean filename with a safe path
-      const fileExt = image.file.name.split('.').pop()?.toLowerCase() || 'jpg';
-      const timestamp = Date.now();
-      const uniqueId = uuidv4().substring(0, 6);
-      const fileName = `image_${timestamp}_${uniqueId}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
-      
-      console.log(`Starting upload of image ${imageNumber}/${images.length}: ${filePath}`);
-      
-      // Update progress
-      setImages(prevImages => 
-        prevImages.map(img => 
-          img.id === image.id ? { ...img, progress: 30 } : img
-        )
-      );
-      
-      // Upload to Supabase Storage - using try/catch to handle any errors
-      let uploadSuccess = false;
-      try {
-        const { data, error: uploadError } = await supabase.storage
-          .from('listing-images')
-          .upload(filePath, image.file, {
-            cacheControl: '3600',
-            upsert: true
-          });
-
-        if (uploadError) throw uploadError;
-        uploadSuccess = true;
-        console.log(`Storage upload successful for image ${imageNumber}`);
-      } catch (uploadError: any) {
-        console.error(`Storage upload error for image ${imageNumber}:`, uploadError);
-        throw new Error(`Failed to upload image: ${uploadError.message || "Unknown error"}`);
-      }
-
-      // Update progress after successful upload
-      setImages(prevImages => 
-        prevImages.map(img => 
-          img.id === image.id ? { ...img, progress: 70, path: filePath } : img
-        )
-      );
-      
-      // Only proceed with DB update if storage upload succeeded
-      if (uploadSuccess) {
-        try {
-          // Create database record with simplified fields
-          const { error: dbError } = await supabase
-            .from('listing_images')
-            .insert([{
-              listing_id: listingId,
-              storage_path: filePath,
-              position: i,
-              is_primary: i === 0  // First image is primary
-            }]);
-              
-          if (dbError) throw dbError;
-          console.log(`Database record created successfully for image ${imageNumber}`);
-        } catch (dbError: any) {
-          console.error(`Database error for image ${imageNumber}:`, dbError);
-          
-          // Try to delete orphaned file from storage
-          try {
-            await supabase.storage
-              .from('listing-images')
-              .remove([filePath]);
-            console.log(`Removed orphaned file ${filePath} after database error`);
-          } catch (removeError) {
-            console.error(`Failed to remove orphaned file ${filePath}:`, removeError);
-          }
-          
-          throw new Error(`Failed to save image info: ${dbError.message || "Database error"}`);
-        }
-      }
-      
-      // Update UI to show complete success
-      setImages(prevImages => 
-        prevImages.map(img => 
-          img.id === image.id ? { 
-            ...img, 
-            progress: 100, 
-            uploaded: true,
-            path: filePath
-          } : img
-        )
-      );
-      
-      successCount++;
-      
-    } catch (error: any) {
-      errorCount++;
-      console.error(`Error uploading image ${imageNumber}:`, error);
-      
-      setImages(prevImages => 
-        prevImages.map(img => 
-          img.id === image.id ? { 
-            ...img, 
-            progress: 0, 
-            error: error.message || "Upload failed" 
-          } : img
-        )
-      );
-    }
-  }
-  
-  setUploadStatus(null);
-  
-  // Provide appropriate feedback based on results
-  if (errorCount > 0) {
-    if (successCount > 0) {
-      toast({
-        variant: "default",
-        title: `Mixed upload results`,
-        description: `${successCount} images uploaded, ${errorCount} failed.`
-      });
-    } else {
+    if (!user) {
+      console.error("User not authenticated");
       toast({
         variant: "destructive",
-        title: `All uploads failed`,
-        description: "None of your images could be uploaded. Please try again."
+        title: "Authentication error",
+        description: "You must be logged in to upload images"
+      });
+      return false;
+    }
+
+    // Check if we have images to upload
+    if (images.length === 0) {
+      console.log("No images to upload");
+      return true; // Return success because there's nothing to upload
+    }
+
+    setUploadStatus("Uploading images...");
+    let successCount = 0;
+    let errorCount = 0;
+    
+    for (let i = 0; i < images.length; i++) {
+      const image = images[i];
+      const imageNumber = i + 1;
+      setUploadStatus(`Uploading image ${imageNumber} of ${images.length}...`);
+      
+      try {
+        // Show start of upload in UI
+        setImages(prevImages => 
+          prevImages.map(img => 
+            img.id === image.id ? { ...img, progress: 10 } : img
+          )
+        );
+        
+        // Create a unique, clean filename with a safe path
+        const fileExt = image.file.name.split('.').pop()?.toLowerCase() || 'jpg';
+        const timestamp = Date.now();
+        const uniqueId = uuidv4().substring(0, 6);
+        const fileName = `image_${timestamp}_${uniqueId}.${fileExt}`;
+        const filePath = `${user.id}/${fileName}`;
+        
+        console.log(`Starting upload of image ${imageNumber}/${images.length}: ${filePath}`);
+        
+        // Update progress
+        setImages(prevImages => 
+          prevImages.map(img => 
+            img.id === image.id ? { ...img, progress: 30 } : img
+          )
+        );
+        
+        // Upload to Supabase Storage - using try/catch to handle any errors
+        let uploadSuccess = false;
+        try {
+          const { data, error: uploadError } = await supabase.storage
+            .from('listing-images')
+            .upload(filePath, image.file, {
+              cacheControl: '3600',
+              upsert: true
+            });
+
+          if (uploadError) throw uploadError;
+          uploadSuccess = true;
+          console.log(`Storage upload successful for image ${imageNumber}`);
+        } catch (uploadError: any) {
+          console.error(`Storage upload error for image ${imageNumber}:`, uploadError);
+          throw new Error(`Failed to upload image: ${uploadError.message || "Unknown error"}`);
+        }
+
+        // Update progress after successful upload
+        setImages(prevImages => 
+          prevImages.map(img => 
+            img.id === image.id ? { ...img, progress: 70, path: filePath } : img
+          )
+        );
+        
+        // Only proceed with DB update if storage upload succeeded
+        if (uploadSuccess) {
+          try {
+            // Create database record with simplified fields
+            const { error: dbError } = await supabase
+              .from('listing_images')
+              .insert([{
+                listing_id: listingId,
+                storage_path: filePath,
+                position: i,
+                is_primary: i === 0  // First image is primary
+              }]);
+                
+            if (dbError) throw dbError;
+            console.log(`Database record created successfully for image ${imageNumber}`);
+          } catch (dbError: any) {
+            console.error(`Database error for image ${imageNumber}:`, dbError);
+            
+            // Try to delete orphaned file from storage
+            try {
+              await supabase.storage
+                .from('listing-images')
+                .remove([filePath]);
+              console.log(`Removed orphaned file ${filePath} after database error`);
+            } catch (removeError) {
+              console.error(`Failed to remove orphaned file ${filePath}:`, removeError);
+            }
+            
+            throw new Error(`Failed to save image info: ${dbError.message || "Database error"}`);
+          }
+        }
+        
+        // Update UI to show complete success
+        setImages(prevImages => 
+          prevImages.map(img => 
+            img.id === image.id ? { 
+              ...img, 
+              progress: 100, 
+              uploaded: true,
+              path: filePath
+            } : img
+          )
+        );
+        
+        successCount++;
+        
+      } catch (error: any) {
+        errorCount++;
+        console.error(`Error uploading image ${imageNumber}:`, error);
+        
+        setImages(prevImages => 
+          prevImages.map(img => 
+            img.id === image.id ? { 
+              ...img, 
+              progress: 0, 
+              error: error.message || "Upload failed" 
+            } : img
+          )
+        );
+      }
+    }
+    
+    setUploadStatus(null);
+    
+    // Provide appropriate feedback based on results
+    if (errorCount > 0) {
+      if (successCount > 0) {
+        toast({
+          variant: "default",
+          title: `Mixed upload results`,
+          description: `${successCount} images uploaded, ${errorCount} failed.`
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: `All uploads failed`,
+          description: "None of your images could be uploaded. Please try again."
+        });
+      }
+    } else if (successCount > 0) {
+      toast({
+        variant: "default", 
+        title: "Images uploaded successfully",
+        description: `All ${successCount} image(s) were uploaded.`
       });
     }
-  } else if (successCount > 0) {
-    toast({
-      variant: "default", 
-      title: "Images uploaded successfully",
-      description: `All ${successCount} image(s) were uploaded.`
-    });
-  }
-  
-  return successCount > 0;
-};
+    
+    return successCount > 0;
+  };
 
-  // PDF file selection handler
+  // Enhanced PDF file selection handler - fixed to match schema
   const handlePDFChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFiles = Array.from(e.target.files);
@@ -1052,11 +1114,16 @@ const AddListing = () => {
         return true;
       });
 
-      // Create PDF objects
-      const newPDFs = validFiles.map(file => {
+      // Create PDF objects with enhanced metadata to match schema
+      const newPDFs = validFiles.map((file, index) => {
         return {
           file,
           id: uuidv4(),
+          name: file.name,
+          description: `Document for property listing`,
+          file_type: 'application/pdf',
+          file_size: file.size,
+          is_primary: pdfs.length === 0 && index === 0, // First document is primary if none exist
           progress: 0,
           uploaded: false
         };
@@ -1071,162 +1138,189 @@ const AddListing = () => {
     setPdfs(pdfs.filter(pdf => pdf.id !== id));
   };
 
-  // Upload PDFs to Supabase
-  const uploadPDFsToSupabase = async (listingId: number) => {
-    if (!user) {
-      console.error("User not authenticated");
-      return false;
-    }
+// FIXED: Upload PDFs to work consistently like images
+const uploadPDFsToSupabase = async (listingId: number) => {
+  if (!user) {
+    console.error("User not authenticated");
+    toast({
+      variant: "destructive", 
+      title: "Authentication error",
+      description: "You must be logged in to upload documents"
+    });
+    return false;
+  }
 
-    if (pdfs.length === 0) {
-      console.log("No PDFs to upload");
-      return true;
-    }
+  // Check if we have PDFs to upload
+  if (pdfs.length === 0) {
+    console.log("No PDFs to upload");
+    return true;
+  }
 
-    setUploadStatus("Uploading documents...");
-    let successCount = 0;
-    let errorCount = 0;
+  setUploadStatus("Uploading documents...");
+  let successCount = 0;
+  let errorCount = 0;
+  
+  for (let i = 0; i < pdfs.length; i++) {
+    const pdf = pdfs[i];
+    const documentNumber = i + 1;
+    setUploadStatus(`Uploading document ${documentNumber} of ${pdfs.length}...`);
     
-    for (let i = 0; i < pdfs.length; i++) {
-      const pdf = pdfs[i];
-      const documentNumber = i + 1;
-      setUploadStatus(`Uploading document ${documentNumber} of ${pdfs.length}...`);
+    try {
+      // Show upload start in UI
+      setPdfs(prevPdfs => 
+        prevPdfs.map(p => 
+          p.id === pdf.id ? { ...p, progress: 10 } : p
+        )
+      );
       
+      // Create a unique filename - IMPORTANT: match the folder structure used in your images
+      const timestamp = Date.now();
+      const uniqueId = uuidv4().substring(0, 6);
+      const fileName = `document_${timestamp}_${uniqueId}.pdf`;
+      
+      // Use the same folder structure that works for your images
+      const filePath = `${user.id}/${fileName}`;
+      
+      console.log(`Starting upload of PDF ${documentNumber}/${pdfs.length}: ${filePath}`);
+      
+      // Update progress indicator
+      setPdfs(prevPdfs => 
+        prevPdfs.map(p => 
+          p.id === pdf.id ? { ...p, progress: 30 } : p
+        )
+      );
+      
+      // IMPORTANT: Add error logging to see what's happening
+      console.log("About to upload PDF to storage:", {
+        bucketName: 'listing-documents',
+        filePath,
+        userId: user.id
+      });
+      
+      // Upload to Supabase Storage - EXACTLY like images but with documents bucket
+      let uploadedData = null;
       try {
-        // Show start of upload in UI
-        setPdfs(prevPdfs => 
-          prevPdfs.map(p => 
-            p.id === pdf.id ? { ...p, progress: 10 } : p
-          )
-        );
+        const { data, error: uploadError } = await supabase.storage
+          .from('listing-documents')
+          .upload(filePath, pdf.file, {
+            cacheControl: '3600',
+            upsert: true
+          });
+          
+        if (uploadError) {
+          console.error("Storage upload error details:", uploadError);
+          throw uploadError;
+        }
         
-        // Create a unique, clean filename
-        const timestamp = Date.now();
-        const uniqueId = uuidv4().substring(0, 6);
-        const fileName = `document_${timestamp}_${uniqueId}.pdf`;
-        const filePath = `${user.id}/${fileName}`;
+        uploadedData = data;
+        console.log("PDF successfully uploaded to storage:", data);
+      } catch (uploadError: any) {
+        console.error("PDF upload failed with error:", uploadError);
+        throw new Error(`Failed to upload document: ${uploadError.message}`);
+      }
+      
+      // Progress update after storage upload
+      setPdfs(prevPdfs => 
+        prevPdfs.map(p => 
+          p.id === pdf.id ? { ...p, progress: 70, path: filePath } : p
+        )
+      );
+      
+      // Create database record if storage upload succeeded
+      try {
+        // Match exact column names from your table
+        const { error: dbError } = await supabase
+          .from('listing_documents')
+          .insert([{
+            listing_id: listingId,
+            name: pdf.name || pdf.file.name,
+            description: `Document for listing #${listingId}`,
+            storage_path: filePath,
+            file_type: 'application/pdf',
+            file_size: pdf.file.size,
+            is_primary: i === 0, // First document is primary
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }]);
+          
+        if (dbError) {
+          console.error("Database insert error:", dbError);
+          throw dbError;
+        }
         
-        console.log(`Starting upload of PDF ${documentNumber}/${pdfs.length}: ${filePath}`);
+        console.log(`Database record created for PDF ${documentNumber}`);
+      } catch (dbError: any) {
+        console.error(`Database error for PDF ${documentNumber}:`, dbError);
         
-        // Update progress
-        setPdfs(prevPdfs => 
-          prevPdfs.map(p => 
-            p.id === pdf.id ? { ...p, progress: 30 } : p
-          )
-        );
-        
-        // Upload to Supabase Storage
-        let uploadSuccess = false;
+        // Try to clean up orphaned file
         try {
-          const { data, error: uploadError } = await supabase.storage
+          await supabase.storage
             .from('listing-documents')
-            .upload(filePath, pdf.file, {
-              cacheControl: '3600',
-              upsert: true
-            });
-
-          if (uploadError) throw uploadError;
-          uploadSuccess = true;
-          console.log(`Storage upload successful for PDF ${documentNumber}`);
-        } catch (uploadError: any) {
-          console.error(`Storage upload error for PDF ${documentNumber}:`, uploadError);
-          throw new Error(`Failed to upload document: ${uploadError.message || "Unknown error"}`);
-        }
-
-        // Update progress after successful upload
-        setPdfs(prevPdfs => 
-          prevPdfs.map(p => 
-            p.id === pdf.id ? { ...p, progress: 70, path: filePath } : p
-          )
-        );
-        
-        // Create database record
-        if (uploadSuccess) {
-          try {
-            const { error: dbError } = await supabase
-              .from('listing_documents')
-              .insert([{
-                listing_id: listingId,
-                storage_path: filePath,
-                document_name: pdf.file.name,
-                document_type: 'pdf',
-                file_size: pdf.file.size
-              }]);
-              
-            if (dbError) throw dbError;
-            console.log(`Database record created successfully for PDF ${documentNumber}`);
-          } catch (dbError: any) {
-            console.error(`Database error for PDF ${documentNumber}:`, dbError);
-            
-            // Try to delete orphaned file from storage
-            try {
-              await supabase.storage
-                .from('listing-documents')
-                .remove([filePath]);
-              console.log(`Removed orphaned file ${filePath} after database error`);
-            } catch (removeError) {
-              console.error(`Failed to remove orphaned file ${filePath}:`, removeError);
-            }
-            
-            throw new Error(`Failed to save document info: ${dbError.message || "Database error"}`);
-          }
+            .remove([filePath]);
+        } catch (removeError) {
+          console.error(`Failed to remove orphaned file:`, removeError);
         }
         
-        // Update UI to show complete success
-        setPdfs(prevPdfs => 
-          prevPdfs.map(p => 
-            p.id === pdf.id ? { 
-              ...p, 
-              progress: 100, 
-              uploaded: true,
-              path: filePath
-            } : p
-          )
-        );
-        
-        successCount++;
-        
-      } catch (error: any) {
-        errorCount++;
-        console.error(`Error uploading PDF ${documentNumber}:`, error);
-        
-        setPdfs(prevPdfs => 
-          prevPdfs.map(p => 
-            p.id === pdf.id ? { 
-              ...p, 
-              progress: 0, 
-              error: error.message || "Upload failed" 
-            } : p
-          )
-        );
+        throw new Error(`Database error: ${dbError.message}`);
       }
+      
+      // Success update
+      setPdfs(prevPdfs => 
+        prevPdfs.map(p => 
+          p.id === pdf.id ? { 
+            ...p, 
+            progress: 100, 
+            uploaded: true,
+            path: filePath
+          } : p
+        )
+      );
+      
+      successCount++;
+      
+    } catch (error: any) {
+      errorCount++;
+      console.error(`Error processing PDF ${documentNumber}:`, error);
+      
+      setPdfs(prevPdfs => 
+        prevPdfs.map(p => 
+          p.id === pdf.id ? { 
+            ...p, 
+            progress: 0, 
+            error: error.message || "Upload failed" 
+          } : p
+        )
+      );
     }
-    
-    // Provide feedback
-    if (errorCount > 0) {
-      if (successCount > 0) {
-        toast({
-          variant: "default",
-          title: `Mixed upload results`,
-          description: `${successCount} documents uploaded, ${errorCount} failed.`
-        });
-      } else {
-        toast({
-          variant: "destructive",
-          title: `All uploads failed`,
-          description: "None of your documents could be uploaded. Please try again."
-        });
-      }
-    } else if (successCount > 0) {
+  }
+  
+  setUploadStatus(null);
+  
+  // Provide feedback
+  if (errorCount > 0) {
+    if (successCount > 0) {
       toast({
-        variant: "default", 
-        title: "Documents uploaded successfully",
-        description: `All ${successCount} document(s) were uploaded.`
+        variant: "default",
+        title: `Mixed upload results`,
+        description: `${successCount} documents uploaded, ${errorCount} failed.`
+      });
+    } else {
+      toast({
+        variant: "destructive",
+        title: `All uploads failed`,
+        description: "None of your documents could be uploaded. Please try again."
       });
     }
-    
-    return successCount > 0;
-  };
+  } else if (successCount > 0) {
+    toast({
+      variant: "default", 
+      title: "Documents uploaded successfully",
+      description: `All ${successCount} document(s) were uploaded.`
+    });
+  }
+  
+  return successCount > 0;
+};
 
   // Form submission handler
   const onSubmit = async (values: z.infer<typeof listingSchema>) => {
@@ -1249,10 +1343,20 @@ const AddListing = () => {
       return;
     }
     
+    // Validate captcha if provided
+    if (!captchaToken && values.captchaToken) {
+      toast({
+        variant: "destructive",
+        title: "CAPTCHA verification required",
+        description: "Please complete the CAPTCHA verification before submitting."
+      });
+      return;
+    }
+    
     setIsSubmitting(true);
     
     try {
-      // FIXED: Create listing data object with number validation
+      // Create listing data object with number validation
       const price = parseFloat(values.price);
       const annual_revenue = parseFloat(values.annualRevenue);
       
@@ -1271,7 +1375,7 @@ const AddListing = () => {
         description: values.description.trim(),
         city: values.city.trim(),
         state: values.state,
-        address: values.address.trim(), // Added address field
+        address: values.address.trim(),
         latitude: values.latitude,
         longitude: values.longitude,
         num_sites: parseInt(values.numSites),
@@ -1356,6 +1460,11 @@ const AddListing = () => {
         title: "Listing submitted successfully",
         description: "Your property has been added to our listings and is pending review.",
       });
+      
+      // Reset captcha if used
+      if (captchaRef.current) {
+        captchaRef.current.resetCaptcha();
+      }
       
       // Redirect to broker dashboard
       setTimeout(() => {
@@ -1453,7 +1562,7 @@ const AddListing = () => {
                   )}
                 />
 
-                {/* NEW: Address field */}
+                {/* Enhanced address field with improved search */}
                 <FormField
                   control={form.control}
                   name="address"
@@ -1467,6 +1576,13 @@ const AddListing = () => {
                             className="pl-9" 
                             {...field}
                             maxLength={200}
+                            // Auto-trigger address search when user enters address and moves to next field
+                            onBlur={(e) => {
+                              field.onBlur();
+                              if (field.value && field.value.length > 5) {
+                                handleAddressSearch();
+                              }
+                            }}
                           />
                           <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                         </div>
@@ -1596,7 +1712,7 @@ const AddListing = () => {
                   
                   <div className="flex flex-wrap gap-3 text-sm items-center">
                     <div className={`px-3 py-1 rounded-full ${form.getValues('location_set') ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                      {form.getValues('location_set') ? 'Location set' : 'Location not set'}
+                                            {form.getValues('location_set') ? 'Location set' : 'Location not set'}
                     </div>
                     {form.getValues('latitude') && form.getValues('longitude') && (
                       <span className="text-gray-500">
@@ -1696,7 +1812,7 @@ const AddListing = () => {
                             {...restField}
                             onChange={(e) => {
                               const formattedValue = formatNumberInput(e.target.value, false);
-                              // ADDED: Value limit for numeric field
+                              // Value limit for numeric field
                               if (formattedValue && parseInt(formattedValue) > 999999) {
                                 e.target.value = "999999";
                               } else {
@@ -1767,7 +1883,7 @@ const AddListing = () => {
                               {...restField}
                               onChange={(e) => {
                                 const formattedValue = formatNumberInput(e.target.value, true);
-                                // ADDED: Value limit for numeric field
+                                // Value limit for numeric field
                                 if (formattedValue && parseFloat(formattedValue) > 9999999999) {
                                   e.target.value = "9999999999";
                                 } else {
@@ -1977,6 +2093,42 @@ const AddListing = () => {
                 </div>
               </div>
               
+              {/* hCaptcha verification */}
+              <div className="space-y-4 pt-4 border-t mt-4">
+                <FormField
+                  control={form.control}
+                  name="captchaToken"
+                  render={() => (
+                    <FormItem>
+                      <FormLabel>Security Verification</FormLabel>
+                      <FormControl>
+                        <div className="flex justify-center py-2">
+                          <HCaptcha
+                            sitekey={HCAPTCHA_SITE_KEY}
+                            onVerify={handleVerificationSuccess}
+                            ref={captchaRef}
+                            onLoad={() => {
+                              // Auto-verify in development mode to bypass localhost warning
+                              if (process.env.NODE_ENV === 'development') {
+                                setTimeout(() => {
+                                  const mockToken = "dev-mode-captcha-token-" + Date.now();
+                                  handleVerificationSuccess(mockToken);
+                                  console.log("Auto-verified captcha in development mode");
+                                }, 1000);
+                              }
+                            }}
+                          />
+                        </div>
+                      </FormControl>
+                      <FormDescription>
+                        Please complete the CAPTCHA verification to submit your listing
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              
               <div className="flex justify-end pt-4 border-t mt-8">
                 <Button 
                   type="submit" 
@@ -2004,3 +2156,4 @@ const AddListing = () => {
 };
 
 export default AddListing;
+                

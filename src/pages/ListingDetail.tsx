@@ -11,7 +11,7 @@ import {
   Building, ChevronLeft, ChevronRight, Maximize2, 
   Star, ExternalLink, MessageSquare, Phone, Mail,
   Loader2, FileText, FileDown, Send, User, Lock,
-  FileIcon, File
+  FileIcon, File, Check
 } from "lucide-react";
 import { ListingCard } from "@/components/listings/ListingCard";
 import { Badge } from "@/components/ui/badge";
@@ -60,11 +60,13 @@ interface BrokerInfo {
   verifiedStatus?: boolean;
 }
 
-// Interface for document type
+// Enhanced DocumentData interface with storage fields
 interface DocumentData {
   id: number;
   name: string;
-  url: string;
+  url?: string;
+  storagePath?: string; // Added for secure download
+  storageBucket?: string; // Added for secure download
   type: string;
   size?: number;
   is_primary?: boolean;
@@ -99,7 +101,7 @@ interface ListingData {
   created_at?: string;
   updated_at?: string;
   user_id?: string;
-  offering_memorandum_path?: string;
+  amenities?: Record<string, boolean> | string[] | null;
 }
 
 // Interface for the current user
@@ -108,6 +110,53 @@ interface CurrentUser {
   email: string;
   full_name?: string;
 }
+
+// Secure document download handler
+const secureDocumentDownload = async (
+  path: string,
+  bucketName: string = 'listing-documents',
+  filename: string,
+  onSuccess?: () => void,
+  onError?: (error: Error) => void
+): Promise<void> => {
+  try {
+    // Get the document directly from Supabase storage
+    const { data, error } = await supabase.storage
+      .from(bucketName)
+      .download(path);
+    
+    if (error || !data) {
+      console.error("Secure download error:", error);
+      if (onError) onError(new Error(error?.message || "Failed to download file"));
+      return;
+    }
+    
+    // Create a blob from the file data
+    const blob = new Blob([data]);
+    
+    // Create a temporary URL for the blob
+    const objectUrl = URL.createObjectURL(blob);
+    
+    // Create a temporary link element and trigger download
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+    }, 100);
+    
+    if (onSuccess) onSuccess();
+    
+  } catch (err) {
+    console.error("Secure download failed:", err);
+    if (onError) onError(err instanceof Error ? err : new Error("Unknown error"));
+  }
+};
 
 const ListingDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -121,6 +170,7 @@ const ListingDetail = () => {
   const [documents, setDocuments] = useState<DocumentData[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [amenities, setAmenities] = useState<string[]>([]);
   
   // Contact form state
   const [name, setName] = useState("");
@@ -203,10 +253,39 @@ const ListingDetail = () => {
       
       setLoadingDocuments(true);
       try {
-        const docs = await getListingDocuments(id);
-        setDocuments(docs);
+        // Get listing documents from the database
+        const { data: documentData, error } = await supabase
+          .from('listing_documents')
+          .select('*')
+          .eq('listing_id', id);
+          
+        if (error) throw error;
+        
+        if (documentData && documentData.length > 0) {
+          // Transform the documents with storage paths instead of direct URLs
+          const processedDocs: DocumentData[] = documentData.map(doc => {
+            const fileType = getFileTypeCategory(doc.name || '');
+            
+            return {
+              id: doc.id,
+              name: doc.name || `Document ${doc.id}`,
+              type: fileType,
+              size: doc.file_size,
+              is_primary: doc.is_primary,
+              description: doc.description,
+              created_at: doc.created_at,
+              storagePath: doc.storage_path,
+              storageBucket: 'listing-documents'
+            };
+          });
+          
+          setDocuments(processedDocs);
+        } else {
+          setDocuments([]);
+        }
       } catch (error) {
         console.error("Error fetching documents:", error);
+        setDocuments([]);
       } finally {
         setLoadingDocuments(false);
       }
@@ -268,16 +347,18 @@ const ListingDetail = () => {
               totalListings: 48,
               joinedDate: "2018-03-15",
               verifiedStatus: true
-            }
+            },
+            amenities: ['WiFi', 'Swimming Pool', 'Laundry Facilities', '24/7 Security', 
+                    'Club House', 'Playground', 'Pet Friendly', 'Waterfront Access']
           };
           setListing(enhancedMockListing);
+          setAmenities(enhancedMockListing.amenities as string[] || []);
           setDocuments(enhancedMockListing.documents || []);
           setLoading(false);
           return;
         }
         
         // If not in mock data, fetch from Supabase
-        // Use direct field names from the database (no coordinates join)
         const { data: supabaseListing, error: supabaseError } = await supabase
           .from('listings')
           .select('*')
@@ -312,8 +393,6 @@ const ListingDetail = () => {
             
           return publicUrl?.publicUrl || '';
         }) || [];
-        
-        // Documents are fetched separately in the other useEffect hook
         
         // Fetch user info if user_id exists
         let brokerInfo: BrokerInfo = { 
@@ -364,24 +443,23 @@ const ListingDetail = () => {
           try {
             if (typeof supabaseListing.amenities === 'string') {
               amenitiesList = JSON.parse(supabaseListing.amenities);
-            } else if (Array.isArray(supabaseListing.amenities)) {
-              amenitiesList = supabaseListing.amenities;
+            } else if (typeof supabaseListing.amenities === 'object') {
+              // Handle both array and object formats
+              if (Array.isArray(supabaseListing.amenities)) {
+                amenitiesList = supabaseListing.amenities;
+              } else {
+                // Convert object of {amenity: true/false} to array of string keys with true values
+                amenitiesList = Object.keys(supabaseListing.amenities).filter(
+                  key => supabaseListing.amenities[key] === true
+                );
+              }
             }
           } catch (e) {
             console.error("Failed to parse amenities:", e);
           }
         }
         
-        // Get PDF URL if there is an offering memorandum
-        let pdfUrl = null;
-        if (supabaseListing.offering_memorandum_path) {
-          const { data: publicUrl } = supabase
-            .storage
-            .from('listing-documents')
-            .getPublicUrl(supabaseListing.offering_memorandum_path);
-            
-          pdfUrl = publicUrl?.publicUrl || null;
-        }
+        setAmenities(amenitiesList);
         
         // Format listing data to match our interface - use snake_case field names from database
         const formattedListing: ListingData = {
@@ -410,8 +488,7 @@ const ListingDetail = () => {
           created_at: supabaseListing.created_at,
           updated_at: supabaseListing.updated_at,
           user_id: supabaseListing.user_id,
-          pdfUrl: pdfUrl,
-          offering_memorandum_path: supabaseListing.offering_memorandum_path
+          amenities: amenitiesList
         };
         
         setListing(formattedListing);
@@ -539,19 +616,85 @@ const ListingDetail = () => {
     );
   };
 
-  const handleDownload = (url: string, filename: string) => {
-    // Create an anchor element and trigger the download
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
+  // UPDATED: Secure document download handler
+  const handleDownload = async (doc: DocumentData) => {
+    // Show loading toast
     toast({
-      title: "Download Started",
-      description: `Downloading ${filename}`,
+      title: "Preparing download...",
+      description: `Getting ${doc.name} ready`
     });
+    
+    try {
+      // Check if this is a Supabase document with storage path
+      if (doc.storagePath) {
+        // Use the secure document download function
+        await secureDocumentDownload(
+          doc.storagePath,
+          doc.storageBucket || 'listing-documents',
+          doc.name,
+          () => {
+            toast({
+              title: "Download Started",
+              description: `Downloading ${doc.name}`
+            });
+          },
+          (error) => {
+            toast({
+              variant: "destructive",
+              title: "Download Failed",
+              description: error.message || "Could not download the file"
+            });
+          }
+        );
+      } 
+      // For legacy documents
+      else if (doc.url) {
+        if (doc.url.includes('supabase.co/storage/v1/object/public/')) {
+          // Extract path and bucket from URL
+          const urlParts = doc.url.split('/storage/v1/object/public/');
+          if (urlParts.length !== 2) throw new Error("Invalid storage URL");
+          
+          const [bucketWithPath] = urlParts[1].split('?', 1);
+          const [bucket, ...pathParts] = bucketWithPath.split('/');
+          const path = pathParts.join('/');
+          
+          // Use secure download
+          await secureDocumentDownload(
+            path,
+            bucket,
+            doc.name
+          );
+          
+          toast({
+            title: "Download Started",
+            description: `Downloading ${doc.name}`
+          });
+        } else {
+          // For local files or external URLs without Supabase domain
+          const link = document.createElement('a');
+          link.href = doc.url;
+          link.download = doc.name;
+          link.target = "_blank"; // Open in new tab to avoid navigation
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          toast({
+            title: "Download Started",
+            description: `Downloading ${doc.name}`
+          });
+        }
+      } else {
+        throw new Error("Document has no URL or storage path");
+      }
+    } catch (error) {
+      console.error("Download error:", error);
+      toast({
+        variant: "destructive",
+        title: "Download Failed",
+        description: "Could not download the document"
+      });
+    }
   };
 
   // Helper function for document icon and color
@@ -1024,12 +1167,13 @@ const ListingDetail = () => {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-3">
+                    {/* Check for documents */}
                     {documents && documents.length > 0 ? (
-                      documents.map((doc, index) => {
+                      documents.map((doc) => {
                         const { icon, bg } = getDocumentIconAndColor(doc.type);
                         return (
                           <div 
-                            key={index}
+                            key={doc.id}
                             className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                           >
                             <div className="flex items-center">
@@ -1048,7 +1192,7 @@ const ListingDetail = () => {
                               variant="outline"
                               size="sm"
                               className="text-blue-600"
-                              onClick={() => handleDownload(doc.url, doc.name)}
+                              onClick={() => handleDownload(doc)}
                             >
                               <FileDown className="h-4 w-4 mr-1" />
                               Download
@@ -1056,28 +1200,6 @@ const ListingDetail = () => {
                           </div>
                         );
                       })
-                    ) : listing.pdfUrl ? (
-                      // If no documents but we have an offering memorandum
-                      <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                        <div className="flex items-center">
-                          <div className="bg-red-100 text-red-700 p-2 rounded-lg mr-4">
-                            <FileText className="h-6 w-6" />
-                          </div>
-                          <div>
-                            <p className="font-medium">Offering Memorandum</p>
-                            <p className="text-xs text-gray-500">Complete property details (PDF)</p>
-                          </div>
-                        </div>
-                        <Button 
-                          variant="outline"
-                          size="sm"
-                          className="text-blue-600"
-                          onClick={() => handleDownload(listing.pdfUrl!, "offering-memorandum.pdf")}
-                        >
-                          <FileDown className="h-4 w-4 mr-1" />
-                          Download
-                        </Button>
-                      </div>
                     ) : (
                       // If no documents at all, show placeholder
                       <div className="text-center py-8">
@@ -1148,44 +1270,29 @@ The park is well-maintained and includes amenities such as a swimming pool, club
 
 This turnkey operation is perfect for investors looking to enter the growing RV park and campground industry with an established, profitable business.`}
                   </p>
-                  
-                  {/* Updated: Only show download button if we have either a primary document or specific PDF URL */}
-                  {(listing.pdfUrl || documents?.some(doc => doc.is_primary && doc.type === 'pdf')) && (
-                    <Button 
-                      variant="outline" 
-                      className="flex items-center mt-4 border-[#f74f4f]/20 text-[#f74f4f] hover:bg-[#f74f4f]/5"
-                      onClick={() => {
-                        // Try to download primary document first, then fall back to pdfUrl
-                        const primaryPdf = documents?.find(doc => doc.is_primary && doc.type === 'pdf');
-                        if (primaryPdf) {
-                          handleDownload(primaryPdf.url, primaryPdf.name);
-                        } else if (listing.pdfUrl) {
-                          handleDownload(listing.pdfUrl, "offering-memorandum.pdf");
-                        }
-                      }}
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Download Offering Memorandum
-                    </Button>
-                  )}
-                </TabsContent>
 
-                {/* Rest of the tabs remain the same */}
+                </TabsContent>
                 
                 <TabsContent value="features" className="mt-0 p-6">
                   <h2 className="text-xl font-bold mb-4">Features & Amenities</h2>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4">
-                    {['WiFi', 'Swimming Pool', 'Laundry Facilities', '24/7 Security', 
-                      'Club House', 'Playground', 'Pet Friendly', 'Waterfront Access',
-                      'Hiking Trails', 'Fishing Pond', 'Full Hookups', 'Store/Shop'].map((feature, i) => (
-                      <div key={i} className="flex items-center py-2 border-b border-gray-100">
-                        <div className="p-1 rounded-full bg-emerald-100 mr-3">
-                          <Star className="h-4 w-4 text-emerald-600" />
+                    {amenities && amenities.length > 0 ? (
+                      // Display actual amenities from database
+                      amenities.map((amenity, i) => (
+                        <div key={i} className="flex items-center py-2 border-b border-gray-100">
+                          <div className="p-1 rounded-full bg-emerald-100 mr-3">
+                            <Check className="h-4 w-4 text-emerald-600" />
+                          </div>
+                          <span className="text-gray-700">{amenity}</span>
                         </div>
-                        <span className="text-gray-700">{feature}</span>
+                      ))
+                    ) : (
+                      // Fallback message if no amenities
+                      <div className="col-span-2 py-6 text-center text-gray-500">
+                        <p>No amenities information available for this property.</p>
                       </div>
-                    ))}
+                    )}
                   </div>
                 </TabsContent>
                 
@@ -1341,7 +1448,7 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
                   Guest management platform
                 </div>
               </div>
-                            <Button asChild className="w-full bg-white text-purple-900 hover:bg-gray-100">
+              <Button asChild className="w-full bg-white text-purple-900 hover:bg-gray-100">
                 <a href="https://www.roverpass.com/p/campground-reservation-software" target="_blank" rel="noopener noreferrer">
                   Learn More
                 </a>
