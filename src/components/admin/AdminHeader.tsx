@@ -34,13 +34,19 @@ export function AdminHeader() {
   // Enhanced logout function that ensures redirection
   const handleLogout = async () => {
     try {
-      // Call Supabase auth signOut directly
+      // Primero intentar con el signOut del hook si está disponible
+      if (signOut) {
+        await signOut();
+      }
+      
+      // Luego asegurar el logout con Supabase directamente
       await supabase.auth.signOut();
       
       // Clear all auth-related localStorage items
       localStorage.removeItem('userRole');
       localStorage.removeItem('forceAdmin');
       localStorage.removeItem('bypassAuth');
+      localStorage.removeItem('supabase.auth.token');
       
       // Show success toast
       toast({
@@ -48,12 +54,25 @@ export function AdminHeader() {
         description: "You have been successfully logged out",
       });
       
-      // Force navigation to home page
+      // Redirección inmediata
+      window.location.href = "/";
+      
+      // Como respaldo adicional con un pequeño retraso
       setTimeout(() => {
-        window.location.href = "/";
-      }, 500);
+        navigate("/");
+      }, 100);
     } catch (error) {
       console.error("Error signing out:", error);
+      
+      // Intento final en caso de error
+      try {
+        localStorage.clear(); // Limpiar todo el localStorage como último recurso
+        window.location.reload(); // Forzar recarga de la página
+        window.location.href = "/"; // Intentar redirección directa
+      } catch (fallbackError) {
+        console.error("Fallback logout also failed:", fallbackError);
+      }
+      
       toast({
         title: "Error",
         description: "There was a problem logging out. Please try again.",
