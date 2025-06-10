@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 
 // Pages
@@ -94,6 +94,36 @@ const LinkWrapper = ({ to, children }: { to: string, children: React.ReactNode }
       {children}
     </a>
   );
+};
+
+// Trailing slash handling component
+const TrailingSlashHandler = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Skip if we're on the root path already with trailing slash or non-root with trailing slash
+    if (location.pathname === '/' || location.pathname.endsWith('/')) {
+      return;
+    }
+
+    // Check specifically for the case when someone enters without trailing slash
+    if (location.pathname === '') {
+      console.log('[Router] Redirecting to add trailing slash');
+      navigate('/', { replace: true });
+    }
+
+    // Log what we're doing for debugging
+    console.log('[Router] Adding trailing slash to:', location.pathname);
+    
+    // Add trailing slash and keep any query parameters and hash
+    navigate(`${location.pathname}/`, { 
+      replace: true,
+      state: location.state
+    });
+  }, [location.pathname, navigate]);
+
+  return null;
 };
 
 // Route handling component
@@ -205,6 +235,8 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter basename={PATH_PREFIX}>
+          {/* Add the TrailingSlashHandler component here */}
+          <TrailingSlashHandler />
           <AppRoutes />
         </BrowserRouter>
       </TooltipProvider>

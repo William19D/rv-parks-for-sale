@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -47,7 +47,12 @@ import {
   Eye,
   Trash,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Settings,
+  Loader2,
+  DatabaseIcon,
+  CheckCheck,
+  XIcon
 } from 'lucide-react';
 
 // Status type for listings
@@ -55,7 +60,7 @@ type ListingStatus = 'pending' | 'approved' | 'rejected' | 'all';
 
 // Updated Listing type matching your actual database schema
 interface Listing {
-  id: string;
+  id: string | number;
   title: string;
   price: number;
   status: string;
@@ -73,15 +78,27 @@ interface Listing {
   cap_rate?: number;
 }
 
+// Sample rejection reasons for quick selection
+const REJECTION_REASONS = [
+  "Missing required information",
+  "Photos don't meet quality standards",
+  "Pricing information is incorrect or missing",
+  "Location details are incomplete",
+  "Property doesn't meet marketplace requirements"
+];
+
 const statusOptions = [
   { value: 'pending', label: 'Pending Review', color: 'bg-yellow-100 text-yellow-800' },
   { value: 'approved', label: 'Approved', color: 'bg-green-100 text-green-800' },
   { value: 'rejected', label: 'Rejected', color: 'bg-red-100 text-red-800' }
 ];
 
+// Configuration for fetching
+const MAX_RETRY_ATTEMPTS = 3;
+
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState<ListingStatus>('all');
-  const [listings, setListings] = useState<Listing[]>([]);
+  const [allListings, setAllListings] = useState<Listing[]>([]);
   const [filteredListings, setFilteredListings] = useState<Listing[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -91,6 +108,14 @@ const AdminDashboard = () => {
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [newStatus, setNewStatus] = useState<string>('');
   const [rejectionReason, setRejectionReason] = useState('');
+  const [selectedReasonIndex, setSelectedReasonIndex] = useState<number | null>(null);
+  
+  // Fetch state management
+  const [retryCount, setRetryCount] = useState(0);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  
+  // Stats tracking
   const [statusCounts, setStatusCounts] = useState({
     all: 0,
     pending: 0,
@@ -100,50 +125,108 @@ const AdminDashboard = () => {
   
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  // For tracking if the component is mounted
+  const isMountedRef = useRef(true);
+  // For managing fetch timeouts
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+  
+  // Select a predefined rejection reason
+  const selectReason = (index: number) => {
+    setSelectedReasonIndex(index);
+    setRejectionReason(REJECTION_REASONS[index]);
+  };
 
-  // Fetch listings from Supabase
-  const fetchListings = async () => {
+  // Simpler, more reliable fetch function with retry capability
+  const fetchAllListings = async (isRetry = false) => {
+    // If this is a fresh fetch (not a retry), reset state
+    if (!isRetry) {
+      setRetryCount(0);
+      setFetchError(null);
+    }
+    
+    // Clear any previous timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    
     setIsLoading(true);
     
+    // Set a timeout to retry if needed
+    timeoutRef.current = setTimeout(() => {
+      if (!isMountedRef.current) return;
+      
+      // Only retry if we haven't reached max attempts
+      if (retryCount < MAX_RETRY_ATTEMPTS) {
+        console.log(`[Admin] Fetch timeout - retrying (${retryCount + 1}/${MAX_RETRY_ATTEMPTS})...`);
+        
+        setRetryCount(prev => prev + 1);
+        fetchAllListings(true);
+      } else {
+        setIsLoading(false);
+        setFetchError("Connection timed out. The server is taking too long to respond.");
+        
+        toast({
+          title: "Connection Issue",
+          description: "Failed to load listings after multiple attempts.",
+          variant: "destructive",
+        });
+      }
+    }, 15000); // 15 second timeout (increased from 10s for slower connections)
+    
     try {
-      console.log('[Admin] Fetching listings from Supabase...');
+      console.log(`[Admin] Fetching listings${isRetry ? ` (attempt ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})` : ''}...`);
       
-      // Basic query with only the fields we need
-      let query = supabase
+      // Use Promise.race to implement our own timeout mechanism instead of AbortController
+      const { data, error } = await supabase
         .from('listings')
-        .select('id, title, price, status, created_at, rejection_reason, city, state, property_type, user_id, description, address');
+        .select('id, title, price, status, created_at, rejection_reason, city, state, property_type, user_id')
+        .order('created_at', { ascending: false });
       
-      // Only apply filter if not "all"
-      if (activeTab !== 'all') {
-        query = query.eq('status', activeTab);
+      // Clear the timeout since we got a response
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
       
-      const { data, error } = await query;
+      if (!isMountedRef.current) return; // Don't update state if component unmounted
       
       if (error) {
-        console.error('[Admin] Error fetching listings:', error);
-        throw error;
+        console.error('[Admin] Database error:', error);
+        throw new Error(`Database error: ${error.message}`);
       }
       
-      console.log(`[Admin] Successfully fetched ${data?.length || 0} listings`);
+      console.log(`[Admin] Successfully fetched ${data?.length || 0} total listings`);
       
-      // Create empty arrays if no data
       if (!data || data.length === 0) {
-        setListings([]);
+        setAllListings([]);
         setFilteredListings([]);
         setStatusCounts({
           all: 0,
-          pending: 0,
+          pending: 0, 
           approved: 0,
           rejected: 0
         });
+        setIsLoading(false);
+        setDataLoaded(true);
         return;
       }
       
-      // Map data to our interface
+      // Process the listings data
       const processedListings: Listing[] = data.map(item => ({
-        id: String(item.id),
-        title: item.title || 'Untitled',
+        id: item.id,
+        title: item.title || 'Untitled Listing',
         price: Number(item.price) || 0,
         status: item.status || 'pending',
         created_at: item.created_at || new Date().toISOString(),
@@ -152,84 +235,126 @@ const AdminDashboard = () => {
         state: item.state || 'Unknown',
         property_type: item.property_type || 'RV Park',
         user_id: item.user_id,
-        description: item.description,
-        address: item.address
       }));
       
-      // Set state
-      setListings(processedListings);
+      // Update all states
+      setAllListings(processedListings);
+      updateFilteredListings(processedListings, activeTab);
+      updateStatusCounts(processedListings);
       
-      // Filter based on active tab
-      const filtered = activeTab === 'all'
-        ? processedListings
-        : processedListings.filter(listing => listing.status === activeTab);
+      // Clear any error state
+      setFetchError(null);
+      setDataLoaded(true);
       
-      setFilteredListings(filtered);
+      // Show success toast if this was a retry
+      if (isRetry) {
+        toast({
+          title: "Connection Restored",
+          description: "Successfully loaded listings data.",
+        });
+      }
+    } catch (error: any) {
+      // Clear the timeout since we got a response (even if it's an error)
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
       
-      // Update counts
-      setStatusCounts({
-        all: processedListings.length,
-        pending: processedListings.filter(l => l.status === 'pending').length,
-        approved: processedListings.filter(l => l.status === 'approved').length,
-        rejected: processedListings.filter(l => l.status === 'rejected').length
-      });
+      if (!isMountedRef.current) return; // Don't update state if component unmounted
       
-    } catch (error) {
-      console.error('[Admin] Error in fetchListings:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch listings from database",
-        variant: "destructive",
-      });
+      console.error('[Admin] Error in fetchAllListings:', error);
       
-      // Reset state on error
-      setListings([]);
-      setFilteredListings([]);
-      setStatusCounts({
-        all: 0,
-        pending: 0,
-        approved: 0,
-        rejected: 0
-      });
+      // Retry logic if not reached max attempts
+      if (retryCount < MAX_RETRY_ATTEMPTS - 1) {
+        setRetryCount(prev => prev + 1);
+        
+        toast({
+          title: "Error Loading Data",
+          description: `Retrying... (Attempt ${retryCount + 2}/${MAX_RETRY_ATTEMPTS})`,
+        });
+        
+        // Wait 2 seconds before retrying
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            fetchAllListings(true);
+          }
+        }, 2000);
+      } else {
+        // Max retries reached, show error
+        setIsLoading(false);
+        setFetchError(error.message || "Failed to load listings data");
+        
+        toast({
+          title: "Error",
+          description: "Could not load listings. Please try again later.",
+          variant: "destructive",
+        });
+      }
     } finally {
-      setIsLoading(false);
+      // If this is the last attempt or we succeeded, set loading false
+      if (retryCount >= MAX_RETRY_ATTEMPTS - 1 || !fetchError) {
+        setIsLoading(false);
+      }
     }
   };
+  
+  // Helper to update filtered listings based on active tab
+  const updateFilteredListings = (listings: Listing[], tab: ListingStatus) => {
+    if (tab === 'all') {
+      setFilteredListings(listings);
+    } else {
+      setFilteredListings(listings.filter(listing => listing.status === tab));
+    }
+  };
+  
+  // Helper to calculate status counts
+  const updateStatusCounts = (listings: Listing[]) => {
+    setStatusCounts({
+      all: listings.length,
+      pending: listings.filter(l => l.status === 'pending').length,
+      approved: listings.filter(l => l.status === 'approved').length,
+      rejected: listings.filter(l => l.status === 'rejected').length
+    });
+  };
 
-  // Load listings when component mounts or tab changes
+  // Load ALL listings when component mounts
   useEffect(() => {
-    fetchListings();
-  }, [activeTab]);
+    fetchAllListings();
+  }, []);
+  
+  // Handle tab changes - filter the existing data
+  useEffect(() => {
+    if (allListings.length > 0) {
+      updateFilteredListings(allListings, activeTab);
+    }
+  }, [activeTab, allListings]);
 
-  // Filter listings based on search query
+  // Handle search filtering
   useEffect(() => {
+    if (allListings.length === 0) return;
+    
     if (!searchQuery.trim()) {
-      if (activeTab === 'all') {
-        setFilteredListings(listings);
-      } else {
-        setFilteredListings(listings.filter(listing => listing.status === activeTab));
-      }
+      updateFilteredListings(allListings, activeTab);
       return;
     }
     
     const query = searchQuery.toLowerCase().trim();
     
-    // Start with listings filtered by tab
+    // First filter by active tab
     const tabFilteredListings = activeTab === 'all'
-      ? listings
-      : listings.filter(listing => listing.status === activeTab);
+      ? allListings
+      : allListings.filter(listing => listing.status === activeTab);
     
     // Then filter by search query
     const searchFilteredListings = tabFilteredListings.filter(listing => 
       listing.title?.toLowerCase().includes(query) ||
       listing.city?.toLowerCase().includes(query) ||
       listing.state?.toLowerCase().includes(query) ||
-      listing.property_type?.toLowerCase().includes(query) ||
-      listing.description?.toLowerCase().includes(query)
+      listing.property_type?.toLowerCase().includes(query)
     );
     
     setFilteredListings(searchFilteredListings);
-  }, [searchQuery, listings, activeTab]);
+  }, [searchQuery, allListings, activeTab]);
 
   // Handle tab change
   const handleTabChange = (value: string) => {
@@ -242,11 +367,21 @@ const AdminDashboard = () => {
     setNewStatus(status);
     
     if (status === 'rejected') {
+      // Pre-fill with existing rejection reason if available
       setRejectionReason(listing.rejection_reason || '');
+      setSelectedReasonIndex(null);
       setIsRejectDialogOpen(true);
     } else {
       setIsStatusDialogOpen(true);
     }
+  };
+  
+  // Direct reject handler (opens reject dialog)
+  const handleRejectClick = (listing: Listing) => {
+    setSelectedListing(listing);
+    setRejectionReason(listing.rejection_reason || '');
+    setSelectedReasonIndex(null);
+    setIsRejectDialogOpen(true);
   };
 
   // Open delete confirmation dialog
@@ -255,11 +390,56 @@ const AdminDashboard = () => {
     setIsDeleteDialogOpen(true);
   };
 
-  // Handle rejection with reason
+  // View listing function
+  const viewListing = (listing: Listing) => {
+    // Using a safe approach with multiple fallbacks
+    try {
+      const listingId = listing.id;
+      console.log(`[Admin] Navigating to public listing: /listings/${listingId}`);
+      
+      // First try direct navigation
+      navigate(`/listings/${listingId}`);
+    } catch (err) {
+      console.error("[Admin] Navigation failed:", err);
+      
+      // Fallback to window.open
+      try {
+        window.open(`/listings/${listing.id}`, '_blank');
+      } catch (fallbackErr) {
+        console.error("[Admin] Fallback navigation failed:", fallbackErr);
+        toast({
+          variant: "destructive",
+          title: "Navigation Error",
+          description: "Could not open the listing page."
+        });
+      }
+    }
+  };
+
+  // Edit listing
+  const editListing = (listing: Listing) => {
+    try {
+      navigate(`/admin/listings/${listing.id}/edit`);
+    } catch (err) {
+      console.error("[Admin] Failed to navigate to edit view:", err);
+      toast({
+        variant: "destructive",
+        title: "Navigation Error",
+        description: "Could not open the listing edit page."
+      });
+    }
+  };
+
+  // Handle rejection
   const handleReject = async () => {
     if (!selectedListing) return;
     
     try {
+      // Convert ID to number if needed
+      const listingId = typeof selectedListing.id === 'string' && /^\d+$/.test(selectedListing.id)
+        ? parseInt(selectedListing.id)
+        : selectedListing.id;
+      
       const { error } = await supabase
         .from('listings')
         .update({ 
@@ -267,27 +447,41 @@ const AdminDashboard = () => {
           rejection_reason: rejectionReason.trim() || 'No reason provided',
           updated_at: new Date().toISOString()
         })
-        .eq('id', parseInt(selectedListing.id));
+        .eq('id', listingId);
       
       if (error) throw error;
       
       toast({
         title: "Listing Rejected",
-        description: "Listing has been rejected with reason provided",
+        description: "Listing has been rejected with reason provided.",
       });
       
-      // Reload listings to get updated data
-      fetchListings();
+      // Update local state immediately for better UX
+      const updatedListings = allListings.map(listing => 
+        listing.id === selectedListing.id 
+          ? { 
+              ...listing, 
+              status: 'rejected', 
+              rejection_reason: rejectionReason.trim() || 'No reason provided' 
+            } 
+          : listing
+      );
+      
+      setAllListings(updatedListings);
+      updateFilteredListings(updatedListings, activeTab);
+      updateStatusCounts(updatedListings);
+      
     } catch (error) {
       console.error('Error rejecting listing:', error);
       toast({
         title: "Error",
-        description: "Failed to reject listing",
+        description: "Failed to reject listing. Please try again.",
         variant: "destructive",
       });
     } finally {
       setIsRejectDialogOpen(false);
       setRejectionReason('');
+      setSelectedReasonIndex(null);
     }
   };
 
@@ -296,6 +490,11 @@ const AdminDashboard = () => {
     if (!selectedListing || !newStatus) return;
     
     try {
+      // Convert ID if needed
+      const listingId = typeof selectedListing.id === 'string' && /^\d+$/.test(selectedListing.id)
+        ? parseInt(selectedListing.id)
+        : selectedListing.id;
+      
       const updateData = newStatus === 'approved' 
         ? { status: newStatus, rejection_reason: null, updated_at: new Date().toISOString() }
         : { status: newStatus, updated_at: new Date().toISOString() };
@@ -303,7 +502,7 @@ const AdminDashboard = () => {
       const { error } = await supabase
         .from('listings')
         .update(updateData)
-        .eq('id', parseInt(selectedListing.id));
+        .eq('id', listingId);
       
       if (error) throw error;
       
@@ -312,8 +511,21 @@ const AdminDashboard = () => {
         description: `Listing status changed to ${newStatus}`,
       });
       
-      // Reload listings to get updated data
-      fetchListings();
+      // Update local state for better UX
+      const updatedListings = allListings.map(listing => 
+        listing.id === selectedListing.id 
+          ? { 
+              ...listing, 
+              status: newStatus,
+              rejection_reason: newStatus === 'approved' ? null : listing.rejection_reason 
+            } 
+          : listing
+      );
+      
+      setAllListings(updatedListings);
+      updateFilteredListings(updatedListings, activeTab);
+      updateStatusCounts(updatedListings);
+      
     } catch (error) {
       console.error('Error updating status:', error);
       toast({
@@ -331,10 +543,15 @@ const AdminDashboard = () => {
     if (!selectedListing) return;
     
     try {
+      // Convert ID if needed
+      const listingId = typeof selectedListing.id === 'string' && /^\d+$/.test(selectedListing.id)
+        ? parseInt(selectedListing.id)
+        : selectedListing.id;
+      
       const { error } = await supabase
         .from('listings')
         .delete()
-        .eq('id', parseInt(selectedListing.id));
+        .eq('id', listingId);
       
       if (error) throw error;
       
@@ -343,8 +560,12 @@ const AdminDashboard = () => {
         description: "The listing has been permanently deleted",
       });
       
-      // Reload listings to get updated data
-      fetchListings();
+      // Update local state
+      const updatedListings = allListings.filter(listing => listing.id !== selectedListing.id);
+      setAllListings(updatedListings);
+      updateFilteredListings(updatedListings, activeTab);
+      updateStatusCounts(updatedListings);
+      
     } catch (error) {
       console.error('Error deleting listing:', error);
       toast({
@@ -389,11 +610,12 @@ const AdminDashboard = () => {
         <div className="flex gap-2">
           <Button 
             variant="outline"
-            onClick={fetchListings}
+            onClick={() => fetchAllListings()}
+            disabled={isLoading}
             className="flex items-center gap-1"
           >
-            <RefreshCw className="h-4 w-4" />
-            Refresh Data
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            {isLoading ? 'Loading...' : 'Refresh Data'}
           </Button>
           <Button 
             onClick={() => navigate('/admin/listings/new')}
@@ -487,13 +709,41 @@ const AdminDashboard = () => {
           </div>
         </div>
         
-        {/* Listings Table */}
-        {isLoading ? (
+        {/* Loading State */}
+        {isLoading && (
           <div className="py-10 flex flex-col items-center justify-center">
-            <div className="w-10 h-10 border-4 border-[#f74f4f]/20 border-t-[#f74f4f] rounded-full animate-spin mb-4"></div>
-            <p className="text-gray-500">Loading listings...</p>
+            <Loader2 className="h-12 w-12 text-[#f74f4f] animate-spin mb-4" />
+            <p className="text-gray-500 font-medium">
+              Loading listings{retryCount > 0 ? ` (Attempt ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})` : ''}...
+            </p>
+            <p className="text-gray-400 text-sm mt-1">
+              This may take a few moments
+            </p>
           </div>
-        ) : filteredListings.length === 0 ? (
+        )}
+        
+        {/* Error State */}
+        {!isLoading && fetchError && (
+          <div className="py-10 flex flex-col items-center justify-center">
+            <div className="mb-4 p-4 rounded-full bg-red-50 text-red-600">
+              <DatabaseIcon className="h-12 w-12" />
+            </div>
+            <h3 className="text-lg font-medium text-red-800 mb-2">Connection Issue</h3>
+            <p className="text-gray-600 mb-5 text-center max-w-md">
+              {fetchError || "We couldn't load your listings data. This might be due to a connection issue."}
+            </p>
+            <Button 
+              onClick={() => fetchAllListings()}
+              className="flex items-center bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Try Again
+            </Button>
+          </div>
+        )}
+        
+        {/* Empty State */}
+        {!isLoading && !fetchError && dataLoaded && filteredListings.length === 0 && (
           <div className="py-10 flex flex-col items-center justify-center">
             <div className="mb-4 p-3 rounded-full bg-gray-100">
               <Filter className="h-8 w-8 text-gray-400" />
@@ -503,7 +753,10 @@ const AdminDashboard = () => {
               {searchQuery ? 'Try adjusting your search.' : 'There are no listings in this category yet.'}
             </p>
           </div>
-        ) : (
+        )}
+        
+        {/* Data Table */}
+        {!isLoading && !fetchError && filteredListings.length > 0 && (
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -534,54 +787,102 @@ const AdminDashboard = () => {
                     </TableCell>
                     <TableCell>{formatDate(listing.created_at)}</TableCell>
                     <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => navigate(`/admin/listings/${listing.id}`)}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            <span>View</span>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => navigate(`/admin/listings/${listing.id}/edit`)}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            <span>Edit</span>
-                          </DropdownMenuItem>
-                          
-                          {/* Status change options */}
-                          {listing.status !== 'approved' && (
-                            <DropdownMenuItem onClick={() => openStatusDialog(listing, 'approved')}>
-                              <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
-                              <span>Approve</span>
+                      <div className="flex justify-end items-center space-x-2">
+                        {/* View button */}
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-8 w-8 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                          onClick={() => viewListing(listing)}
+                          title="View public listing"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        
+                        {/* Edit button */}
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-8 w-8 p-0 text-amber-600 hover:text-amber-800 hover:bg-amber-50"
+                          onClick={() => editListing(listing)}
+                          title="Edit listing details"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        
+                        {/* ADDED: Direct Approve/Reject buttons for pending listings */}
+                        {listing.status === 'pending' && (
+                          <>
+                            {/* Approve button */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-green-600 hover:text-green-800 hover:bg-green-50"
+                              onClick={() => openStatusDialog(listing, 'approved')}
+                              title="Approve listing"
+                            >
+                              <CheckCheck className="h-4 w-4" />
+                            </Button>
+                            
+                            {/* Direct Reject button */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-red-600 hover:text-red-800 hover:bg-red-50"
+                              onClick={() => handleRejectClick(listing)}
+                              title="Reject listing"
+                            >
+                              <XIcon className="h-4 w-4" />
+                            </Button>
+                          </>
+                        )}
+
+                        {/* More options dropdown */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-8 w-8 p-0 hover:bg-gray-100"
+                              title="More actions"
+                            >
+                              <Settings className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {/* Status change options */}
+                            {listing.status !== 'approved' && (
+                              <DropdownMenuItem onClick={() => openStatusDialog(listing, 'approved')}>
+                                <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
+                                <span>Approve</span>
+                              </DropdownMenuItem>
+                            )}
+                            
+                            {listing.status !== 'rejected' && (
+                              <DropdownMenuItem onClick={() => handleRejectClick(listing)}>
+                                <XCircle className="mr-2 h-4 w-4 text-red-600" />
+                                <span>Reject</span>
+                              </DropdownMenuItem>
+                            )}
+                            
+                            {listing.status !== 'pending' && (
+                              <DropdownMenuItem onClick={() => openStatusDialog(listing, 'pending')}>
+                                <Clock className="mr-2 h-4 w-4 text-yellow-600" />
+                                <span>Mark as Pending</span>
+                              </DropdownMenuItem>
+                            )}
+                            
+                            {/* Delete option */}
+                            <DropdownMenuItem 
+                              onClick={() => openDeleteDialog(listing)}
+                              className="text-red-600"
+                            >
+                              <Trash className="mr-2 h-4 w-4" />
+                              <span>Delete</span>
                             </DropdownMenuItem>
-                          )}
-                          
-                          {listing.status !== 'rejected' && (
-                            <DropdownMenuItem onClick={() => openStatusDialog(listing, 'rejected')}>
-                              <XCircle className="mr-2 h-4 w-4 text-red-600" />
-                              <span>Reject</span>
-                            </DropdownMenuItem>
-                          )}
-                          
-                          {listing.status !== 'pending' && (
-                            <DropdownMenuItem onClick={() => openStatusDialog(listing, 'pending')}>
-                              <Clock className="mr-2 h-4 w-4 text-yellow-600" />
-                              <span>Mark as Pending</span>
-                            </DropdownMenuItem>
-                          )}
-                          
-                          {/* Delete option */}
-                          <DropdownMenuItem 
-                            onClick={() => openDeleteDialog(listing)}
-                            className="text-red-600"
-                          >
-                            <Trash className="mr-2 h-4 w-4" />
-                            <span>Delete</span>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -616,7 +917,7 @@ const AdminDashboard = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Rejection Dialog with Reason */}
+      {/* IMPROVED: Rejection Dialog with Reason Selection */}
       <AlertDialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -627,14 +928,39 @@ const AdminDashboard = () => {
           </AlertDialogHeader>
           
           <div className="space-y-4 py-4">
+            {/* Quick selection reasons */}
+            <div className="space-y-2">
+              <Label className="text-sm text-gray-500">Common Rejection Reasons:</Label>
+              <div className="flex flex-wrap gap-2">
+                {REJECTION_REASONS.map((reason, index) => (
+                  <Badge 
+                    key={index}
+                    variant="outline"
+                    className={`cursor-pointer ${
+                      selectedReasonIndex === index 
+                        ? 'bg-red-50 border-red-200 text-red-800' 
+                        : 'hover:bg-gray-100'
+                    }`}
+                    onClick={() => selectReason(index)}
+                  >
+                    {reason}
+                  </Badge>
+                ))}
+              </div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="rejection-reason">Rejection Reason</Label>
               <Textarea 
                 id="rejection-reason"
                 placeholder="Explain why this listing is being rejected..."
                 value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
+                onChange={(e) => {
+                  setRejectionReason(e.target.value);
+                  setSelectedReasonIndex(null);
+                }}
                 rows={4}
+                className="resize-none"
+                autoFocus
               />
             </div>
           </div>

@@ -17,6 +17,18 @@ import { cn } from "@/lib/utils";
 // Importar el logo directamente usando el alias @
 import logoImage from "@/assets/logo.svg";
 
+// Define the base path for the app
+const PATH_PREFIX = "/rv-parks-for-sale";
+
+// Force trailing slash on every page load
+document.addEventListener('DOMContentLoaded', () => {
+  const path = window.location.pathname;
+  // Check if we're at the base URL without trailing slash
+  if (path === PATH_PREFIX) {
+    window.location.replace(path + '/' + window.location.search + window.location.hash);
+  }
+});
+
 // Definir el tipo para los elementos de navegación
 interface NavItem {
   name: string;
@@ -59,20 +71,34 @@ export const HeaderSpacer = memo(() => {
   return <div style={{ height: `${headerHeight}px` }}></div>;
 });
 
+// Ensure paths have trailing slashes
+const ensureTrailingSlash = (path: string): string => {
+  if (path === '/') return '/';
+  return path.endsWith('/') ? path : `${path}/`;
+};
+
 // Función para determinar si una ruta está activa
 const isRouteActive = (item: NavItem, pathname: string): boolean => {
+  // Normalize both paths to have trailing slashes for comparison
+  const normalizedPath = ensureTrailingSlash(item.path);
+  const normalizedPathname = ensureTrailingSlash(pathname);
+  
   // Si es una ruta exacta, solo debe coincidir perfectamente
   if (item.exact) {
-    return pathname === item.path;
+    return normalizedPathname === normalizedPath;
   }
   
   // Verificar si el path actual está en las rutas excluidas
-  if (item.exclude && item.exclude.some(route => pathname === route || pathname.startsWith(route))) {
+  if (item.exclude && item.exclude.some(route => {
+    const normalizedExclude = ensureTrailingSlash(route);
+    return normalizedPathname === normalizedExclude || normalizedPathname.startsWith(normalizedExclude);
+  })) {
     return false;
   }
   
   // Para rutas no exactas, verificar si coincide exactamente o si es una subruta
-  return pathname === item.path || (item.path !== '/' && pathname.startsWith(`${item.path}/`));
+  return normalizedPathname === normalizedPath || 
+         (normalizedPath !== '/' && normalizedPathname.startsWith(normalizedPath));
 };
 
 // Componente memoizado para cada elemento de navegación
@@ -81,10 +107,19 @@ const NavItemComponent = memo(({ item, closeDropdowns }: {
   closeDropdowns: () => void 
 }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const active = isRouteActive(item, location.pathname);
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent default navigation behavior
     closeDropdowns();
+    
+    // Add trailing slash to the path if it doesn't have one, except for root
+    const targetPath = item.path === '/' ? '/' : ensureTrailingSlash(item.path);
+    
+    // Navigate with trailing slash
+    navigate(targetPath);
+    
     window.scrollTo({
       top: 0,
       behavior: "instant"
@@ -93,8 +128,8 @@ const NavItemComponent = memo(({ item, closeDropdowns }: {
 
   return (
     <div className="relative group">
-      <NavLink
-        to={item.path}
+      <a
+        href={item.path === '/' ? '/' : ensureTrailingSlash(item.path)}
         className={cn(
           "px-2 py-2 text-sm font-medium transition-colors flex items-center",
           active ? "text-[#f74f4f]" : "text-gray-700 hover:text-[#f74f4f]"
@@ -107,7 +142,7 @@ const NavItemComponent = memo(({ item, closeDropdowns }: {
           "absolute bottom-0 left-0 h-0.5 bg-[#f74f4f] transition-all duration-300",
           active ? "w-full" : "w-0 group-hover:w-full"
         )}></span>
-      </NavLink>
+      </a>
     </div>
   );
 });
@@ -118,10 +153,19 @@ const MobileNavItem = memo(({ item, setMenuOpen }: {
   setMenuOpen: (isOpen: boolean) => void 
 }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   const active = isRouteActive(item, location.pathname);
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent default navigation
     setMenuOpen(false);
+    
+    // Add trailing slash to path if needed
+    const targetPath = item.path === '/' ? '/' : ensureTrailingSlash(item.path);
+    
+    // Navigate with proper trailing slash
+    navigate(targetPath);
+    
     window.scrollTo({
       top: 0,
       behavior: "instant"
@@ -130,8 +174,8 @@ const MobileNavItem = memo(({ item, setMenuOpen }: {
 
   return (
     <div>
-      <NavLink
-        to={item.path}
+      <a
+        href={item.path === '/' ? '/' : ensureTrailingSlash(item.path)}
         className={cn(
           "flex items-center py-2 px-3 rounded-md group",
           active ? "bg-gray-100 text-[#f74f4f]" : "hover:bg-gray-100"
@@ -145,7 +189,7 @@ const MobileNavItem = memo(({ item, setMenuOpen }: {
         )}>
           {item.name}
         </span>
-      </NavLink>
+      </a>
     </div>
   );
 });
@@ -158,6 +202,8 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
   isMobile: boolean;
   setMenuOpen: (isOpen: boolean) => void;
 }) => {
+  const navigate = useNavigate();
+  
   // Función para obtener nombre de usuario de diversas fuentes
   const userName = useMemo(() => {
     if (!user) return "";
@@ -189,6 +235,15 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
     });
     await signOut();
     setMenuOpen(false);
+  };
+  
+  const handleNavigation = (e: React.MouseEvent, path: string) => {
+    e.preventDefault();
+    // Ensure trailing slash
+    const targetPath = path === '/' ? '/' : ensureTrailingSlash(path);
+    navigate(targetPath);
+    setMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: "instant" });
   };
 
   if (loading) {
@@ -242,42 +297,36 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
         {/* Contenido para usuario no autenticado */}
         {isMobile ? (
           <div className="space-y-2">
-            <Link 
-              to="/login" 
-              onClick={() => { 
-                setMenuOpen(false);
-                window.scrollTo({ top: 0, behavior: "instant" }); 
-              }}
+            <a 
+              href="/login/" 
+              onClick={(e) => handleNavigation(e, "/login")}
             >
               <Button variant="outline" className="w-full">
                 Sign In
               </Button>
-            </Link>
-            <Link 
-              to="/register" 
-              onClick={() => { 
-                setMenuOpen(false);
-                window.scrollTo({ top: 0, behavior: "instant" }); 
-              }}
+            </a>
+            <a 
+              href="/register/" 
+              onClick={(e) => handleNavigation(e, "/register")}
             >
               <Button className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]">
                 Register
               </Button>
-            </Link>
+            </a>
           </div>
         ) : (
           <div className="flex items-center space-x-2">
-            <Link 
-              to="/login" 
-              onClick={() => window.scrollTo({ top: 0, behavior: "instant" })}
+            <a 
+              href="/login/" 
+              onClick={(e) => handleNavigation(e, "/login")}
             >
               <Button variant="ghost" size="sm">
                 Sign In
               </Button>
-            </Link>
-            <Link 
-              to="/register" 
-              onClick={() => window.scrollTo({ top: 0, behavior: "instant" })}
+            </a>
+            <a 
+              href="/register/" 
+              onClick={(e) => handleNavigation(e, "/register")}
             >
               <Button 
                 size="sm"
@@ -285,7 +334,7 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
               >
                 Register
               </Button>
-            </Link>
+            </a>
           </div>
         )}
       </>
@@ -301,6 +350,17 @@ export const Header = memo(() => {
   const [scrolled, setScrolled] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const location = useLocation();
+  const navigate = useNavigate();
+  
+  // Force URL check on every page render
+  useEffect(() => {
+    // Check current URL for trailing slash
+    const path = window.location.pathname;
+    if (path === PATH_PREFIX) {
+      console.log('[Header] Missing trailing slash detected, redirecting...');
+      window.location.replace(path + '/' + window.location.search + window.location.hash);
+    }
+  }, []);
   
   // Monitor de cambios de ruta para scroll al inicio
   useEffect(() => {
@@ -369,6 +429,22 @@ export const Header = memo(() => {
     setActiveDropdown(null);
   };
 
+  // Handle logo click with explicit trailing slash navigation
+  const handleLogoClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    // When clicking the logo, we need to navigate to the home page with trailing slash
+    // For the root path in React Router + basename, we need to handle this specially
+    closeDropdowns();
+    
+    // Use navigate('/') to go to the root within the basename
+    navigate('/');
+    
+    window.scrollTo({
+      top: 0,
+      behavior: "instant"
+    });
+  };
+
   // Memoizar los ítems de navegación para evitar re-renderizado
   const desktopNavItems = useMemo(() => 
     navItemsState.map(item => (
@@ -403,16 +479,10 @@ export const Header = memo(() => {
     >
       <div className="container mx-auto px-4 flex items-center justify-between">
         <div className="flex items-center">
-          <Link 
-            to="/" 
+          <a 
+            href="/"
             className="flex items-center group" 
-            onClick={() => {
-              closeDropdowns();
-              window.scrollTo({
-                top: 0,
-                behavior: "instant"
-              });
-            }}
+            onClick={handleLogoClick}
           >
             {/* Logo Area */}
             <div className="w-48 h-12 flex items-center mr-4">
@@ -422,7 +492,7 @@ export const Header = memo(() => {
                 className="w-full h-full object-contain group-hover:opacity-80 transition-opacity duration-300" 
               />
             </div>
-          </Link>
+          </a>
         </div>
 
         {isMobile ? (
