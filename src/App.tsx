@@ -21,6 +21,7 @@ import AuthCallback from "./pages/AuthCallback";
 import EmailVerification from "./pages/EmailVerification";
 import ListingEdit from "./pages/ListingEdit";
 import Profile from "./pages/profile";
+import Support from "./pages/Support"; // Import Support page
 
 // Admin Pages
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -129,7 +130,7 @@ const TrailingSlashHandler = () => {
 
 // Route handling component
 const AppRoutes = () => {
-  const { user, loading, isAdmin, roles } = useAuth();
+  const { user, status, isAdmin } = useAuth();
   const location = useLocation();
   
   // Si necesitamos redirección externa y no estamos en la ruta raíz, redirigir
@@ -145,12 +146,12 @@ const AppRoutes = () => {
   useEffect(() => {
     console.log(`[Router] Route changed to: ${location.pathname}`);
     console.log(`[Router] Current auth state - User: ${user?.id || 'none'}`);
-    console.log(`[Router] Is admin: ${isAdmin}, Roles: ${roles?.join(', ') || 'none'}`);
+    console.log(`[Router] Is admin: ${isAdmin}`);
     console.log(`[Router] External redirect required: ${isExternalRedirectRequired()}`);
-  }, [location.pathname, user, isAdmin, roles]);
+  }, [location.pathname, user, isAdmin]);
   
   // Show loader during authentication verification
-  if (loading && !isAdminRoute) {
+  if (status === 'loading' && !isAdminRoute) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
@@ -207,6 +208,9 @@ const AppRoutes = () => {
         <Route path="/profile" element={
           user ? <Profile /> : <Navigate to="/login" state={{ from: location }} replace />
         } />
+        
+        {/* Add Support route */}
+        <Route path="/support" element={<Support />} />
         
         {/* Authentication routes */}
         <Route path="/login" element={

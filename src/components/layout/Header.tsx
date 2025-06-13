@@ -8,6 +8,7 @@ import {
   User,
   LogOut,
   PlusCircle,
+  LifeBuoy,
   LucideIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -195,9 +196,9 @@ const MobileNavItem = memo(({ item, setMenuOpen }: {
 });
 
 // Componente para la sección de autenticación (memoizado)
-const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
+const AuthSection = memo(({ user, status, signOut, isMobile, setMenuOpen }: {
   user: any;
-  loading: boolean;
+  status: string;
   signOut: () => Promise<void>;
   isMobile: boolean;
   setMenuOpen: (isOpen: boolean) => void;
@@ -253,7 +254,14 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
     window.scrollTo({ top: 0, behavior: "instant" });
   };
 
-  if (loading) {
+  const goToSupport = (e: React.MouseEvent) => {
+    e.preventDefault();
+    navigate('/support/');
+    setMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  };
+
+  if (status === 'loading') {
     return <div className="animate-pulse h-8 w-20 bg-gray-200 rounded"></div>;
   }
   
@@ -277,6 +285,14 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
             >
               View Profile
             </a>
+            <a 
+              href="/support/" 
+              onClick={goToSupport}
+              className="block px-3 py-2 text-sm hover:bg-gray-100 rounded-md flex items-center"
+            >
+              <LifeBuoy className="h-4 w-4 mr-2 text-[#f74f4f]" />
+              Get Support
+            </a>
             <Button 
               variant="outline" 
               className="w-full"
@@ -288,6 +304,15 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
           </div>
         ) : (
           <div className="flex items-center space-x-2">
+            <Button 
+              variant="ghost"
+              size="sm"
+              className="text-gray-600 hover:text-[#f74f4f] flex items-center gap-1"
+              onClick={goToSupport}
+            >
+              <LifeBuoy className="h-4 w-4" />
+              <span className="sr-only md:not-sr-only">Support</span>
+            </Button>
             <div 
               className="flex items-center bg-gray-100 rounded-full p-2 cursor-pointer hover:bg-gray-200 transition-colors"
               onClick={goToProfile}
@@ -363,7 +388,7 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
 // Componente Header memoizado para prevenir re-renderizados innecesarios
 export const Header = memo(() => {
   const isMobile = useIsMobile();
-  const { user, signOut, loading } = useAuth();
+  const { user, signOut, status } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
@@ -546,7 +571,7 @@ export const Header = memo(() => {
                       <div className="pt-2 mt-2 border-t border-gray-200">
                         <AuthSection
                           user={user}
-                          loading={loading}
+                          status={status}
                           signOut={signOut}
                           isMobile={isMobile}
                           setMenuOpen={setMenuOpen}
@@ -566,7 +591,7 @@ export const Header = memo(() => {
               <div className="ml-4 flex items-center space-x-2">
                 <AuthSection
                   user={user}
-                  loading={loading}
+                  status={status}
                   signOut={signOut}
                   isMobile={isMobile}
                   setMenuOpen={setMenuOpen}
