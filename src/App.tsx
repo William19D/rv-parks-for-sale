@@ -20,6 +20,7 @@ import AuthenticationSuccess from "./pages/AuthenticationSuccess";
 import AuthCallback from "./pages/AuthCallback";
 import EmailVerification from "./pages/EmailVerification";
 import ListingEdit from "./pages/ListingEdit";
+import Profile from "./pages/profile";
 
 // Admin Pages
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -200,6 +201,11 @@ const AppRoutes = () => {
         } />
         <Route path="/listings/:id/edit" element={
           user ? (ListingEdit ? <ListingEdit /> : <div>Loading editor...</div>) : <Navigate to="/login" state={{ from: location }} replace />
+        } />
+        
+        {/* Add Profile route */}
+        <Route path="/profile" element={
+          user ? <Profile /> : <Navigate to="/login" state={{ from: location }} replace />
         } />
         
         {/* Authentication routes */}

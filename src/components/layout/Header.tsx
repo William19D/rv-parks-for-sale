@@ -246,6 +246,13 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
     window.scrollTo({ top: 0, behavior: "instant" });
   };
 
+  const goToProfile = (e: React.MouseEvent) => {
+    e.preventDefault();
+    navigate('/profile/');
+    setMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  };
+
   if (loading) {
     return <div className="animate-pulse h-8 w-20 bg-gray-200 rounded"></div>;
   }
@@ -256,12 +263,20 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
         {/* Contenido para usuario autenticado */}
         {isMobile ? (
           <div className="space-y-2">
-            <div className="text-sm text-gray-600 px-3 py-2">
-              <div className="flex items-center space-x-2">
-                <User className="h-4 w-4" />
-                <span>Hello, <span className="font-medium">{userName || user.email?.split('@')[0]}</span></span>
-              </div>
+            <div 
+              className="text-sm px-3 py-2 flex items-center space-x-2 rounded-md hover:bg-gray-100 cursor-pointer"
+              onClick={goToProfile}
+            >
+              <User className="h-4 w-4 text-[#f74f4f]" />
+              <span>Hello, <span className="font-medium">{userName || user.email?.split('@')[0]}</span></span>
             </div>
+            <a 
+              href="/profile/" 
+              onClick={(e) => handleNavigation(e, "/profile")}
+              className="block px-3 py-2 text-sm hover:bg-gray-100 rounded-md"
+            >
+              View Profile
+            </a>
             <Button 
               variant="outline" 
               className="w-full"
@@ -273,7 +288,10 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
           </div>
         ) : (
           <div className="flex items-center space-x-2">
-            <div className="flex items-center bg-gray-100 rounded-full p-2">
+            <div 
+              className="flex items-center bg-gray-100 rounded-full p-2 cursor-pointer hover:bg-gray-200 transition-colors"
+              onClick={goToProfile}
+            >
               <User className="h-4 w-4 text-gray-600 mr-2" />
               <span className="text-sm font-medium text-gray-700">
                 {userName || user.email?.split('@')[0]}

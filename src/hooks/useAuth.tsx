@@ -1,272 +1,219 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Session, User } from '@supabase/supabase-js';
-import { useToast } from '@/hooks/use-toast';
+import { Session, User, AuthError } from '@supabase/supabase-js';
 import { jwtDecode } from 'jwt-decode';
 
 // Type definitions for our system
 type AppRole = 'admin' | 'user';
-type AppPermission = 'listings.create' | 'listings.update' | 'listings.delete' | 
-                    'listings.approve' | 'admin.access' | 'users.manage';
+type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 
-interface AuthContextType {
-  user: User | null;
+interface AuthState {
   session: Session | null;
-  loading: boolean;
-  roles: AppRole[];
-  permissions: AppPermission[];
+  user: User | null;
+  role: AppRole | null;
+  status: AuthStatus;
   isAdmin: boolean;
-  signIn: (email: string, password: string, captchaToken?: string) => Promise<{ error: any | null }>;
-  signUp: (email: string, password: string) => Promise<{ error: any | null; data: any | null }>;
+}
+
+interface AuthContextType extends AuthState {
+  signIn: (email: string, password: string) => Promise<{ error: Error | AuthError | null }>;
+  signUp: (email: string, password: string) => Promise<{ error: Error | AuthError | null; data: any | null }>;
   signOut: () => Promise<void>;
-  resetPassword: (email: string) => Promise<{ error: any | null }>;
-  hasPermission: (permission: AppPermission) => boolean;
+  resetPassword: (email: string) => Promise<{ error: Error | AuthError | null }>;
+  refreshToken: () => Promise<{ error: Error | AuthError | null }>;
+  updatePassword: (password: string) => Promise<{ error: Error | AuthError | null }>;
   hasRole: (role: AppRole) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
-  user: null,
   session: null,
-  loading: true,
-  roles: [],
-  permissions: [],
+  user: null,
+  role: null,
+  status: 'loading',
   isAdmin: false,
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null, data: null }),
   signOut: async () => {},
   resetPassword: async () => ({ error: null }),
-  hasPermission: () => false,
+  refreshToken: async () => ({ error: null }),
+  updatePassword: async () => ({ error: null }),
   hasRole: () => false,
 });
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [roles, setRoles] = useState<AppRole[]>([]);
-  const [permissions, setPermissions] = useState<AppPermission[]>([]);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const { toast } = useToast();
+  // State to track authentication status
+  const [authState, setAuthState] = useState<AuthState>({
+    session: null,
+    user: null,
+    role: null,
+    status: 'loading',
+    isAdmin: false,
+  });
 
-  // Extract claims from JWT token
-  const extractClaims = (accessToken: string) => {
+  // Debug flag for verbose logging
+  const DEBUG = process.env.NODE_ENV === 'development';
+
+  // Log helper that only logs in development mode
+  const logDebug = (...args: any[]) => {
+    if (DEBUG) console.log(...args);
+  };
+
+  // Helper to extract role from token with detailed logging
+  const extractRoleFromToken = (token: string): AppRole | null => {
     try {
-      console.log('[Auth] Extracting claims from JWT');
-      const decoded = jwtDecode<{app_roles: string[]}>(accessToken);
+      const decoded = jwtDecode<any>(token);
       
-      // Get roles from token
-      const userRoles = decoded.app_roles || [];
-      console.log('[Auth] Roles from JWT:', userRoles);
+      if (DEBUG) {
+        logDebug('[Auth] JWT payload:', decoded);
+      }
       
-      // Check if admin role is present
-      const isUserAdmin = userRoles.includes('admin');
+      // UPDATED: Check for app_role field first (this is what our hook sets)
+      const role = decoded.app_role || 
+                  (decoded.app_metadata && decoded.app_metadata.app_role) ||
+                  decoded.role || 
+                  (decoded.claims && decoded.claims.role) ||
+                  (decoded.app_metadata && decoded.app_metadata.role) ||
+                  (decoded.user_metadata && decoded.user_metadata.role);
       
-      // Update state with roles
-      setRoles(userRoles as AppRole[]);
-      setIsAdmin(isUserAdmin);
+      if (role) {
+        logDebug(`[Auth] Role found in JWT: ${role}`);
+        return role === 'admin' ? 'admin' : 'user';
+      }
       
-      return { userRoles, isUserAdmin };
+      logDebug('[Auth] No role found in JWT');
+      return null;
     } catch (error) {
       console.error('[Auth] Error decoding JWT:', error);
-      setRoles([]);
-      setIsAdmin(false);
-      return { userRoles: [], isUserAdmin: false };
+      return null;
     }
   };
 
-  // Fetch permissions for user roles
-  const fetchPermissions = async (userRoles: string[]) => {
-    try {
-      if (!userRoles.length) {
-        setPermissions([]);
-        return;
-      }
-      
-      console.log('[Auth] Fetching permissions for roles:', userRoles);
-      
-      const { data, error } = await supabase
-        .from('role_permissions')
-        .select('permission')
-        .in('role', userRoles);
-      
-      if (error) {
-        console.error('[Auth] Error fetching permissions:', error);
-        setPermissions([]);
-        return;
-      }
-      
-      if (data) {
-        const permissionList = data.map(item => item.permission);
-        console.log('[Auth] User permissions:', permissionList);
-        setPermissions(permissionList as AppPermission[]);
-      }
-    } catch (error) {
-      console.error('[Auth] Error in fetchPermissions:', error);
-      setPermissions([]);
-    }
-  };
-
-  // Initialize authentication state
-  useEffect(() => {
-    console.log('[Auth] Initializing auth provider');
-    let isMounted = true;
+  // Helper to determine the user's role from session data
+  const determineUserRole = (session: Session | null): AppRole => {
+    if (!session) return 'user'; // Default role for unauthenticated users
     
+    // Try to extract role from JWT token
+    const tokenRole = session.access_token ? 
+      extractRoleFromToken(session.access_token) : null;
+    
+    if (tokenRole) {
+      return tokenRole;
+    }
+    
+    // Fallback to metadata in user object
+    const user = session.user;
+    
+    // UPDATED: Check app_metadata.app_role first (from our hook)
+    const metadataRole = user?.app_metadata?.app_role || 
+                         user?.app_metadata?.role || 
+                         user?.user_metadata?.role;
+    
+    if (metadataRole) {
+      logDebug(`[Auth] Role from metadata: ${metadataRole}`);
+      return metadataRole === 'admin' ? 'admin' : 'user';
+    }
+    
+    // Default fallback
+    logDebug('[Auth] No role found, defaulting to user');
+    return 'user';
+  };
+
+  // Update auth state based on session
+  const updateAuthState = (session: Session | null) => {
+    if (!session) {
+      logDebug('[Auth] No session, setting unauthenticated state');
+      setAuthState({
+        session: null,
+        user: null,
+        role: null,
+        status: 'unauthenticated',
+        isAdmin: false,
+      });
+      return;
+    }
+    
+    const role = determineUserRole(session);
+    const isAdmin = role === 'admin';
+    
+    logDebug(`[Auth] User authenticated with role: ${role}, isAdmin: ${isAdmin}`);
+    
+    setAuthState({
+      session,
+      user: session.user,
+      role,
+      status: 'authenticated',
+      isAdmin,
+    });
+  };
+
+  // Initialize and set up auth state listener
+  useEffect(() => {
     const setupAuth = async () => {
       try {
+        logDebug('[Auth] Setting up auth...');
+        
         // Get current session
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
           console.error('[Auth] Error getting session:', error);
-          if (isMounted) {
-            setLoading(false);
-            setUser(null);
-            setSession(null);
-            setRoles([]);
-            setPermissions([]);
-            setIsAdmin(false);
-          }
-          return;
-        }
-
-        if (!session) {
-          console.log('[Auth] No session found');
-          if (isMounted) {
-            setLoading(false);
-            setUser(null);
-            setSession(null);
-            setRoles([]);
-            setPermissions([]);
-            setIsAdmin(false);
-          }
+          setAuthState(prev => ({ ...prev, status: 'unauthenticated' }));
           return;
         }
         
-        console.log('[Auth] Session found for user:', session.user.id);
-        
-        // Set basic user data
-        if (isMounted) {
-          setUser(session.user);
-          setSession(session);
-        }
-        
-        // Extract claims from token
-        if (session.access_token) {
-          const { userRoles } = extractClaims(session.access_token);
-          
-          // Fetch permissions based on roles
-          await fetchPermissions(userRoles);
-        }
-        
-        if (isMounted) setLoading(false);
-        
+        updateAuthState(session);
       } catch (e) {
         console.error('[Auth] Error in setupAuth:', e);
-        if (isMounted) {
-          setLoading(false);
-          setRoles([]);
-          setPermissions([]);
-          setIsAdmin(false);
-        }
+        setAuthState(prev => ({ ...prev, status: 'unauthenticated' }));
       }
     };
     
+    // Initial setup
     setupAuth();
     
-    // Safety timeout for loading state
-    const safetyTimeout = setTimeout(() => {
-      if (isMounted && loading) {
-        console.warn('[Auth] Safety timeout triggered, ending loading');
-        setLoading(false);
-      }
-    }, 3000);
+    // Set up auth state change listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      logDebug('[Auth] Auth state change:', event);
+      updateAuthState(session);
+    });
     
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('[Auth] Auth state change:', event);
-        
-        if (isMounted) {
-          setUser(session?.user || null);
-          setSession(session);
-        }
-        
-        if (!session) {
-          console.log('[Auth] No session in auth change');
-          if (isMounted) {
-            setRoles([]);
-            setPermissions([]);
-            setIsAdmin(false);
-            setLoading(false);
-          }
-          return;
-        }
-        
-        // Extract claims from token
-        if (session.access_token) {
-          const { userRoles } = extractClaims(session.access_token);
-          
-          // Fetch permissions based on roles
-          await fetchPermissions(userRoles);
-        }
-        
-        if (isMounted) setLoading(false);
-      }
-    );
-
+    // Clean up subscription on unmount
     return () => {
-      isMounted = false;
+      logDebug('[Auth] Cleaning up auth subscription');
       subscription.unsubscribe();
-      clearTimeout(safetyTimeout);
     };
   }, []);
   
   // Sign in with email and password
-  const signIn = async (email: string, password: string, captchaToken?: string) => {
+  const signIn = async (email: string, password: string) => {
     try {
-      console.log(`[Auth] Starting login process for: ${email}`);
+      logDebug(`[Auth] Attempting sign in for: ${email}`);
       
-      // Prepare options with captchaToken if provided
-      const options: { captchaToken?: string } = {};
-      if (captchaToken) {
-        console.log('[Auth] Including captcha token in login');
-        options.captchaToken = captchaToken;
-      }
-      
-      // Authenticate with Supabase
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        password,
-        options
+        password
       });
       
       if (error) {
-        console.error('[Auth] Authentication error:', error);
+        console.error('[Auth] Sign in error:', error);
         return { error };
       }
       
-      if (!data || !data.user) {
-        console.error('[Auth] No user data received');
+      if (!data.user || !data.session) {
+        console.error('[Auth] No user data received after sign in');
         return { error: new Error('No user data received') };
       }
       
-      console.log(`[Auth] User authenticated successfully:`, data.user.id);
+      logDebug(`[Auth] Sign in successful for user: ${data.user.id}`);
       
-      // Extract claims from token (roles will be set in the auth change event)
-      if (data.session.access_token) {
-        const { userRoles } = extractClaims(data.session.access_token);
-        
-        // Log the roles for debugging
-        console.log('[Auth] User roles after login:', userRoles);
-        
-        // Set user data immediately for better UX
-        setUser(data.user);
-        setSession(data.session);
-      }
+      // Immediately extract role info
+      const role = determineUserRole(data.session);
+      logDebug(`[Auth] User role after sign in: ${role}`);
       
+      // Token processing will be handled by the auth state change listener
       return { error: null };
     } catch (error: any) {
-      console.error('[Auth] Sign in error:', error);
+      console.error('[Auth] Unexpected error during sign in:', error);
       return { error };
     }
   };
@@ -274,9 +221,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Sign up new user
   const signUp = async (email: string, password: string) => {
     try {
-      console.log(`[Auth] Starting registration for: ${email}`);
+      logDebug(`[Auth] Starting registration for: ${email}`);
       
-      // Register with Supabase
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -288,18 +234,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
       
       if (!data || !data.user) {
-        console.error('[Auth] No user data received');
+        console.error('[Auth] No user data received after registration');
         return { error: new Error('No user data received'), data: null };
       }
       
-      console.log(`[Auth] User registered successfully:`, data.user.id);
+      logDebug(`[Auth] Registration successful for user: ${data.user.id}`);
       
-      // By default newly registered users will get 'user' role via the database
-      // This happens through RLS and trigger functions
-      
+      // Note: By default, new users will get 'user' role via the trigger
       return { error: null, data };
     } catch (error: any) {
-      console.error('[Auth] Sign up error:', error);
+      console.error('[Auth] Unexpected error during registration:', error);
       return { error, data: null };
     }
   };
@@ -307,21 +251,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Sign out user
   const signOut = async () => {
     try {
-      console.log('[Auth] Signing out user');
+      logDebug('[Auth] Signing out user');
       
       // Clear state first for better UX
-      setUser(null);
-      setSession(null);
-      setRoles([]);
-      setPermissions([]);
-      setIsAdmin(false);
+      setAuthState({
+        session: null,
+        user: null,
+        role: null,
+        status: 'loading',
+        isAdmin: false,
+      });
       
       // Then sign out from Supabase
       await supabase.auth.signOut();
       
-      console.log('[Auth] User signed out successfully');
+      logDebug('[Auth] User signed out successfully');
     } catch (error) {
-      console.error('[Auth] Sign out error:', error);
+      console.error('[Auth] Error during sign out:', error);
     }
   };
   
@@ -330,7 +276,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       if (!email) return { error: new Error('Email is required') };
       
-      console.log(`[Auth] Sending password reset email to: ${email}`);
+      logDebug(`[Auth] Sending password reset email to: ${email}`);
       
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
@@ -338,35 +284,86 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       return { error };
     } catch (error: any) {
-      console.error('[Auth] Reset password error:', error);
+      console.error('[Auth] Error sending password reset:', error);
+      return { error };
+    }
+  };
+  
+  // Update user password
+  const updatePassword = async (password: string) => {
+    try {
+      if (!password) return { error: new Error('Password is required') };
+      
+      logDebug('[Auth] Updating password');
+      
+      const { error } = await supabase.auth.updateUser({ password });
+      
+      if (!error) {
+        logDebug('[Auth] Password updated successfully');
+      }
+      
+      return { error };
+    } catch (error: any) {
+      console.error('[Auth] Error updating password:', error);
+      return { error };
+    }
+  };
+  
+  // Force a token refresh to get updated claims
+  const refreshToken = async () => {
+    try {
+      logDebug('[Auth] Refreshing token');
+      
+      const { data, error } = await supabase.auth.refreshSession();
+      
+      if (error) {
+        console.error('[Auth] Token refresh error:', error);
+        return { error };
+      }
+      
+      if (!data.session) {
+        console.error('[Auth] No session after refresh');
+        return { error: new Error('No session after refresh') };
+      }
+      
+      // Force role check after refresh
+      const role = determineUserRole(data.session);
+      logDebug(`[Auth] Role after token refresh: ${role}`);
+      
+      // Manually update auth state to ensure role updates immediately
+      updateAuthState(data.session);
+      
+      logDebug('[Auth] Token refreshed successfully');
+      
+      return { error: null };
+    } catch (error: any) {
+      console.error('[Auth] Error during token refresh:', error);
       return { error };
     }
   };
   
   // Helper method to check if user has a specific role
-  const hasRole = (role: AppRole) => {
-    return roles.includes(role);
+  const hasRole = (role: AppRole): boolean => {
+    if (role === 'user') {
+      // Admin users can do anything a user can do
+      return authState.role === 'admin' || authState.role === 'user';
+    }
+    
+    // Otherwise strict equality check
+    return authState.role === role;
   };
   
-  // Helper method to check if user has a specific permission
-  const hasPermission = (permission: AppPermission) => {
-    return permissions.includes(permission) || isAdmin;
-  };
-  
-  const value = {
-    user,
-    session,
-    loading,
-    roles,
-    permissions,
-    isAdmin,
+  // Create the context value - memoize for performance
+  const value = useMemo(() => ({
+    ...authState,
     signIn,
     signUp,
     signOut,
     resetPassword,
-    hasPermission,
+    updatePassword,
+    refreshToken,
     hasRole,
-  };
+  }), [authState]);
 
   return (
     <AuthContext.Provider value={value}>
@@ -375,4 +372,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
 };
 
-export const useAuth = () => useContext(AuthContext);
+// Custom hook to use auth context
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  
+  return context;
+};
