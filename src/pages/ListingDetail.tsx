@@ -1390,35 +1390,30 @@ This turnkey operation is perfect for investors looking to enter the growing RV 
           
           {/* Sidebar - 1/3 width on desktop */}
           <div className="space-y-6">
-            {/* Simplified Broker Contact Card - Only name, phone and photo */}
-            <Card className="overflow-hidden border-gray-200 bg-white">
+            {/* COMBINED CONTACT CARD with broker information */}
+            <Card className="overflow-hidden border-gray-200 bg-gradient-to-br from-[#f74f4f] to-[#ff7a45] text-white">
               <CardContent className="p-6">
-                <div className="flex items-center mb-4">
-                  <Avatar className="h-16 w-16 mr-4 border border-gray-100">
+                <div className="flex flex-col items-center text-center mb-6">
+                  <Avatar className="h-20 w-20 mb-3 border-2 border-white/30">
                     {listing.broker?.avatar ? (
                       <AvatarImage src={listing.broker.avatar} alt={listing.broker.name} />
                     ) : (
-                      <AvatarFallback className="bg-gray-100 text-gray-500 text-lg">
+                      <AvatarFallback className="bg-white/20 text-white text-lg">
                         {listing.broker?.name?.charAt(0) || 'B'}
                       </AvatarFallback>
                     )}
                   </Avatar>
-                  <div>
-                    <h3 className="font-bold text-lg">{listing.broker?.name || "Property Broker"}</h3>
-                    {listing.broker?.phone && (
-                      <a 
-                        href={`tel:${listing.broker.phone}`} 
-                        className="text-[#f74f4f] flex items-center mt-1"
-                      >
-                        <Phone className="h-4 w-4 mr-1" />
-                        {listing.broker.phone}
-                      </a>
+                  <div className="space-y-1">
+                    <h3 className="font-bold text-xl text-white">{listing.broker?.name || "Broker"}</h3>
+                    {listing.broker?.company && (
+                      <p className="text-white/80">{listing.broker.company}</p>
                     )}
                   </div>
                 </div>
                 
                 <Button 
-                  className="w-full bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
+                  className="w-full bg-white hover:bg-white/90 text-[#f74f4f]"
+                  size="lg"
                   onClick={() => setContactModalOpen(true)}
                 >
                   <MessageSquare className="h-4 w-4 mr-2" />

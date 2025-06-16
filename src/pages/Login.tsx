@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,53 +8,62 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
 import { Loader2 } from "lucide-react";
+import HCaptcha from '@hcaptcha/react-hcaptcha';
+
+// Get hCaptcha site key from environment variables
+const HCAPTCHA_SITE_KEY = import.meta.env.VITE_HCAPTCHA_SITE_KEY || '10000000-ffff-ffff-ffff-000000000001';
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [redirecting, setRedirecting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRef = useRef<HCaptcha | null>(null);
   
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const { signIn, user, isAdmin } = useAuth();
+  const { signIn, user, isAdmin, roles } = useAuth();
   
-  // Handle redirection after successful login with improved role detection
+  // Handle redirection after successful authentication
   useEffect(() => {
-    if (!user || redirecting) return;
+    if (!user) return;
     
-    // Mark that we're handling redirection to avoid multiple redirects
-    setRedirecting(true);
-    
+    // This will run when the user authenticates
     console.log('[Login] User authenticated, preparing redirect');
-    console.log('[Login] User role:', isAdmin ? 'admin' : 'user');
+    console.log('[Login] Roles:', roles);
+    console.log('[Login] Is admin:', isAdmin);
     
-    // Allow time for JWT role claims to be properly processed
+    // Short delay to ensure roles have been processed
     const redirectTimeout = setTimeout(() => {
-      let redirectTo = '/';
-      
-      // Check for intended destination or determine based on role
-      if (location.state?.from?.pathname) {
-        redirectTo = location.state.from.pathname;
-      } else if (isAdmin) {
-        redirectTo = '/admin/dashboard';
-      } else {
-        // Regular user dashboard
-        redirectTo = '/dashboard';
-      }
-      
-      console.log(`[Login] Redirecting to: ${redirectTo}`);
-      navigate(redirectTo, { replace: true });
-    }, 500); // Increased delay to ensure JWT is fully processed
+      // Get the intended destination or use default based on role
+      const from = location.state?.from?.pathname || (isAdmin ? '/admin/dashboard' : '/');
+      console.log(`[Login] Redirecting to: ${from}`);
+      navigate(from, { replace: true });
+    }, 200);
     
     return () => clearTimeout(redirectTimeout);
-  }, [user, isAdmin, navigate, location.state, redirecting]);
+  }, [user, isAdmin, roles, navigate, location.state]);
+  
+  // Handle hCaptcha verification
+  const handleVerificationSuccess = (token: string) => {
+    console.log('[Login] hCaptcha verification successful');
+    setCaptchaToken(token);
+  };
+
+  const handleCaptchaError = () => {
+    console.error('[Login] hCaptcha verification failed');
+    toast({
+      title: "Verification Error",
+      description: "Failed to verify that you're not a robot. Please try again.",
+      variant: "destructive",
+    });
+  };
   
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Basic validations
+    // Simple validations
     if (!email) {
       toast({
         title: "Required field",
@@ -81,35 +90,35 @@ const Login = () => {
       });
       return;
     }
+
+    // Check if captcha is completed
+    if (!captchaToken) {
+      toast({
+        title: "Verification required",
+        description: "Please complete the captcha verification",
+        variant: "destructive",
+      });
+      return;
+    }
     
     setLoading(true);
-    setRedirecting(false); // Reset redirecting state on new login attempt
 
     try {
       console.log(`[Login] Attempting to sign in with: ${email}`);
       
-      // Authenticate with Supabase
-      const { error } = await signIn(email, password);
+      // Pass the captcha token to your signIn function
+      const { error } = await signIn(email, password, captchaToken);
 
       if (error) {
         console.error('[Login] Authentication error:', error);
         
-        // Format error message for better user experience
-        let errorMessage = "Invalid credentials";
-        if (error.message) {
-          errorMessage = error.message;
-          
-          // Translate common error messages
-          if (error.message.includes("Invalid login credentials")) {
-            errorMessage = "Invalid email or password. Please check your credentials and try again.";
-          } else if (error.message.includes("custom_access_token_hook")) {
-            errorMessage = "Server error. Please try again or contact support if the issue persists.";
-          }
-        }
+        // Reset captcha if authentication fails
+        captchaRef.current?.resetCaptcha();
+        setCaptchaToken(null);
         
         toast({
           title: "Login error",
-          description: errorMessage,
+          description: error.message || "Incorrect credentials",
           variant: "destructive",
         });
         setLoading(false);
@@ -120,7 +129,7 @@ const Login = () => {
       
       // Show success toast
       toast({
-        title: "Welcome back",
+        title: "Welcome",
         description: "You have successfully logged in",
       });
       
@@ -129,9 +138,13 @@ const Login = () => {
     } catch (error: any) {
       console.error('[Login] Unexpected error:', error);
       
+      // Reset captcha on error
+      captchaRef.current?.resetCaptcha();
+      setCaptchaToken(null);
+      
       toast({
         title: "Error",
-        description: "An unexpected error occurred. Please try again later.",
+        description: "An unexpected error occurred",
         variant: "destructive",
       });
       setLoading(false);
@@ -183,20 +196,26 @@ const Login = () => {
                 </div>
               </div>
               
+              {/* hCaptcha Component */}
+              <div className="flex justify-center py-2">
+                <HCaptcha
+                  ref={captchaRef}
+                  sitekey={HCAPTCHA_SITE_KEY}
+                  onVerify={handleVerificationSuccess}
+                  onError={handleCaptchaError}
+                  onExpire={() => setCaptchaToken(null)}
+                />
+              </div>
+              
               <Button 
                 type="submit" 
                 className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]"
-                disabled={loading || redirecting}
+                disabled={loading || !captchaToken}
               >
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Signing in...
-                  </>
-                ) : redirecting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Redirecting...
                   </>
                 ) : "Sign in"}
               </Button>

@@ -1,54 +1,261 @@
-import { useState } from "react";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { useState, useEffect, useRef } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { Header, HeaderSpacer } from "@/components/layout/Header";
+import { Loader2 } from "lucide-react";
+import HCaptcha from '@hcaptcha/react-hcaptcha';
 
-const MinimalRegister = () => {
+// Get hCaptcha site key from environment variables
+const HCAPTCHA_SITE_KEY = import.meta.env.VITE_HCAPTCHA_SITE_KEY || '10000000-ffff-ffff-ffff-000000000001';
+
+const Register = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [firstName, setFirstName] = useState(""); 
+  const [lastName, setLastName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [debugInfo, setDebugInfo] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaRef = useRef<HCaptcha | null>(null);
+  
+  const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Format phone number as user types
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Get only the digits
+    const digits = e.target.value.replace(/\D/g, '');
+    
+    // Format the phone number as (XXX) XXX-XXXX
+    let formattedPhone = '';
+    if (digits.length <= 3) {
+      formattedPhone = digits.length ? `(${digits}` : '';
+    } else if (digits.length <= 6) {
+      formattedPhone = `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    } else {
+      formattedPhone = `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+    }
+    
+    setPhone(formattedPhone);
+  };
+
+  // Handle hCaptcha verification
+  const handleVerificationSuccess = (token: string) => {
+    console.log('[Register] hCaptcha verification successful');
+    setCaptchaToken(token);
+  };
+
+  const handleCaptchaError = () => {
+    console.error('[Register] hCaptcha verification failed');
+    toast({
+      title: "Verification Error",
+      description: "Failed to verify that you're not a robot. Please try again.",
+      variant: "destructive",
+    });
+  };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setDebugInfo("");
-
-    try {
-      // Log the request we're about to make
-      console.log("Attempting signup with email:", email);
-      
-      // Make a minimal signup request - email and password only
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password
+    
+    // Validación para campos requeridos
+    if (!firstName) {
+      toast({
+        title: "Required Field",
+        description: "Please enter your first name",
+        variant: "destructive",
       });
-
-      if (error) {
-        console.error("Signup error details:", error);
-        setDebugInfo(JSON.stringify(error, null, 2));
-        toast({
-          title: "Registration Error",
-          description: error.message,
-          variant: "destructive"
-        });
-      } else {
-        setDebugInfo(`Success: ${JSON.stringify(data, null, 2)}`);
-        toast({
-          title: "Success",
-          description: "Registration successful. Check your console for details."
-        });
-      }
-    } catch (err: any) {
-      console.error("Unexpected error:", err);
-      setDebugInfo(`Caught error: ${JSON.stringify(err, null, 2)}`);
+      return;
+    }
+    
+    if (!lastName) {
+      toast({
+        title: "Required Field",
+        description: "Please enter your last name",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!email) {
+      toast({
+        title: "Required Field",
+        description: "Please enter your email address",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!email.includes('@')) {
+      toast({
+        title: "Invalid Email",
+        description: "Please enter a valid email address",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!password) {
+      toast({
+        title: "Required Field",
+        description: "Please enter a password",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!confirmPassword) {
+      toast({
+        title: "Required Field",
+        description: "Please confirm your password",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (password !== confirmPassword) {
       toast({
         title: "Error",
-        description: "Unexpected error occurred.",
-        variant: "destructive"
+        description: "Passwords don't match",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (password.length < 6) {
+      toast({
+        title: "Error",
+        description: "Password must be at least 6 characters long",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Validate US phone number format
+    const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+    if (!phone) {
+      toast({
+        title: "Required Field",
+        description: "Please enter your phone number",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!phoneRegex.test(phone)) {
+      toast({
+        title: "Invalid Phone",
+        description: "Please enter a valid phone number in the format (XXX) XXX-XXXX",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check if captcha is completed
+    if (!captchaToken) {
+      toast({
+        title: "Verification required",
+        description: "Please complete the captcha verification",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            first_name: firstName,
+            last_name: lastName,
+            phone_number: phone
+          },
+          // Include captcha token in the registration
+          captchaToken,
+          // Redirigir al callback de auth para que podamos interceptarlo
+          emailRedirectTo: `${window.location.origin}/auth/callback`
+        }
+      });
+      
+      if (error) {
+        // Reset captcha if registration fails
+        captchaRef.current?.resetCaptcha();
+        setCaptchaToken(null);
+        
+        toast({
+          title: "Error",
+          description: error.message,
+          variant: "destructive",
+        });
+      } else {
+        // Comprobamos si el usuario se creó correctamente
+        if (data.user) {
+          // Verificamos si ya existe (para detectar emails ya registrados)
+          if (data.user.identities && data.user.identities.length === 0) {
+            // Reset captcha if email already registered
+            captchaRef.current?.resetCaptcha();
+            setCaptchaToken(null);
+            
+            toast({
+              title: "Email already registered",
+              description: "This email is already registered. Please login or use a different email.",
+              variant: "destructive",
+            });
+          } else {
+            // Segundo paso: Asegurar que se guarden los metadatos con una actualización explícita
+            // Esto es una protección adicional por si la primera vez no se guardó bien
+            if (data.session) {
+              const { error: updateError } = await supabase.auth.updateUser({
+                data: { 
+                  first_name: firstName,
+                  last_name: lastName,
+                  phone_number: phone 
+                }
+              });
+              
+              if (updateError) {
+                console.error("Error updating user metadata:", updateError);
+              }
+            }
+            
+            // Guardar en el almacenamiento local para uso posterior
+            localStorage.setItem('userPhone', phone);
+            localStorage.setItem('userFirstName', firstName);
+            localStorage.setItem('userLastName', lastName);
+            
+            toast({
+              title: "Registration successful!",
+              description: "Check your email to confirm your account",
+            });
+            navigate("/verify-email");
+          }
+        } else {
+          toast({
+            title: "Registration issue",
+            description: "Account created but user data not available. Please try logging in.",
+          });
+          navigate("/verify-email");
+        }
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
+      
+      // Reset captcha on error
+      captchaRef.current?.resetCaptcha();
+      setCaptchaToken(null);
+      
+      toast({
+        title: "Error",
+        description: "Configuration error. Check your Supabase connection.",
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
@@ -56,43 +263,126 @@ const MinimalRegister = () => {
   };
 
   return (
-    <div className="flex justify-center items-center min-h-screen p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Debug Registration</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleRegister} className="space-y-4">
-            <div>
-              <Input
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      <Header />
+      <HeaderSpacer />
+      
+      <div className="flex-grow flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
+            <CardDescription>
+              Register to access all features
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleRegister} className="space-y-4" noValidate>
+              {/* Nuevos campos para nombre y apellido */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="firstName">First Name</Label>
+                  <Input
+                    id="firstName"
+                    type="text"
+                    placeholder="John"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="lastName">Last Name</Label>
+                  <Input
+                    id="lastName"
+                    type="text"
+                    placeholder="Doe"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="phone">Phone Number (US Format)</Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  placeholder="(123) 456-7890"
+                  value={phone}
+                  onChange={handlePhoneChange}
+                  maxLength={14}
+                />
+              </div>
+              <div>
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Minimum 6 characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="Confirm your password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+              </div>
+              
+              {/* hCaptcha Component */}
+              <div className="flex justify-center py-2">
+                <HCaptcha
+                  ref={captchaRef}
+                  sitekey={HCAPTCHA_SITE_KEY}
+                  onVerify={handleVerificationSuccess}
+                  onError={handleCaptchaError}
+                  onExpire={() => setCaptchaToken(null)}
+                />
+              </div>
+              
+              <Button 
+                type="submit" 
+                className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]"
+                disabled={loading || !captchaToken}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating account...
+                  </>
+                ) : "Create Account"}
+              </Button>
+            </form>
+            <div className="mt-4 text-center">
+              <p className="text-sm text-gray-600">
+                Already have an account?{" "}
+                <Link 
+                  to="/login" 
+                  className="text-[#f74f4f] hover:text-[#e43c3c] font-medium"
+                >
+                  Sign in here
+                </Link>
+              </p>
             </div>
-            <div>
-              <Input
-                type="password"
-                placeholder="Password (min 6 chars)"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? "Testing..." : "Test Registration"}
-            </Button>
-          </form>
-
-          {debugInfo && (
-            <div className="mt-4 p-4 bg-gray-100 rounded-md overflow-auto max-h-60">
-              <pre className="text-xs">{debugInfo}</pre>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };
 
-export default MinimalRegister;
+export default Register;

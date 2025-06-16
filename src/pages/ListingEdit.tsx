@@ -42,7 +42,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-// Enhanced validation schema with NUMERIC CONSTRAINTS and address field added
+// Enhanced validation schema with NUMERIC CONSTRAINTS added
+// Adding status field for admins to use
 const listingSchema = z.object({
   title: z
     .string()
@@ -77,12 +78,6 @@ const listingSchema = z.object({
   state: z
     .string()
     .min(2, { message: "State is required" }),
-  
-  // Add the address field to the schema
-  address: z
-    .string()
-    .max(200, { message: "Address is too long" })
-    .optional(),
   
   numSites: z
     .string()
@@ -167,7 +162,6 @@ interface ImageUpload {
   uploaded?: boolean;
   path?: string;
   error?: string;
-  isPrimary?: boolean; // Add flag for primary image
 }
 
 interface ExistingImage {
@@ -270,7 +264,7 @@ Object.entries(stateAbbreviations).forEach(([abbr, name]) => {
 interface DraggableMarkerProps {
   position: [number, number];
   onPositionChange: (lat: number, lng: number) => void;
-  onLocationInfoChange?: (city: string, state: string, address?: string) => void;
+  onLocationInfoChange?: (city: string, state: string) => void;
   propertyType?: string;
 }
 
@@ -289,17 +283,19 @@ const DraggableMarker: React.FC<DraggableMarkerProps> = ({
       setMarkerPosition([position.lat, position.lng]);
       onPositionChange(position.lat, position.lng);
       
-      // Perform reverse geocoding to get city, state, and address
+      // Perform reverse geocoding to get city and state
       if (onLocationInfoChange) {
-        reverseGeocode(position.lat, position.lng).then(({ city, state, address }) => {
-          onLocationInfoChange(city, state, address);
+        reverseGeocode(position.lat, position.lng).then(({ city, state }) => {
+          if (city && state) {
+            onLocationInfoChange(city, state);
+          }
         });
       }
     }
   };
 
   // Enhanced reverse geocode function to convert coordinates to address
-  const reverseGeocode = async (lat: number, lng: number): Promise<{ city: string, state: string, address: string }> => {
+  const reverseGeocode = async (lat: number, lng: number): Promise<{ city: string, state: string }> => {
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`
@@ -308,21 +304,9 @@ const DraggableMarker: React.FC<DraggableMarkerProps> = ({
       
       let city = '';
       let state = '';
-      let address = '';
       
       if (data && data.address) {
         console.log("Geocode data:", data.address);
-        
-        // Get street address
-        const road = data.address.road || data.address.street || '';
-        const houseNumber = data.address.house_number || '';
-        const suburb = data.address.suburb || data.address.neighborhood || '';
-        
-        // Construct address
-        if (road) {
-          address = houseNumber ? `${houseNumber} ${road}` : road;
-          if (suburb) address += `, ${suburb}`;
-        }
         
         // Try to get city (may be labeled differently based on region)
         city = data.address.city || 
@@ -387,11 +371,11 @@ const DraggableMarker: React.FC<DraggableMarkerProps> = ({
         }
       }
       
-      console.log("Matched location info:", { city, state, address });
-      return { city, state, address };
+      console.log("Matched city and state:", { city, state });
+      return { city, state };
     } catch (error) {
       console.error("Error in reverse geocoding:", error);
-      return { city: '', state: '', address: '' };
+      return { city: '', state: '' };
     }
   };
 
@@ -481,13 +465,11 @@ const ListingEdit = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [images, setImages] = useState<ImageUpload[]>([]);
   const [existingImages, setExistingImages] = useState<ExistingImage[]>([]);
-  const [primaryImageId, setPrimaryImageId] = useState<string | null>(null); // For managing primary image
   const [imagesToDelete, setImagesToDelete] = useState<string[]>([]);
   const [selectedAmenities, setSelectedAmenities] = useState<Record<string, boolean>>({});
   const [markerPosition, setMarkerPosition] = useState<[number, number]>([39.8283, -98.5795]); // USA center
   const [locationFound, setLocationFound] = useState(false);
   const [searchTriggered, setSearchTriggered] = useState(false);
-  const [addressSearchTriggered, setAddressSearchTriggered] = useState(false); // Add for address search
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
@@ -507,7 +489,6 @@ const [newStatus, setNewStatus] = useState<ListingStatus | null>(null);
       description: "",
       city: "",
       state: "",
-      address: "", // Now properly included in the schema
       numSites: "",
       occupancyRate: "",
       annualRevenue: "",
@@ -618,11 +599,6 @@ const [newStatus, setNewStatus] = useState<ListingStatus | null>(null);
                 .from('listing-images')
                 .getPublicUrl(img.storage_path);
               
-              // Set primary image ID if this image is marked as primary
-              if (img.is_primary) {
-                setPrimaryImageId(img.id);
-              }
-              
               return {
                 ...img,
                 url: urlData.publicUrl
@@ -654,7 +630,6 @@ const [newStatus, setNewStatus] = useState<ListingStatus | null>(null);
           description: listing.description || "",
           city: listing.city || "",
           state: listing.state || "",
-          address: listing.address || "",
           numSites: listing.num_sites?.toString() || "",
           occupancyRate: listing.occupancy_rate?.toString() || "",
           annualRevenue: listing.annual_revenue?.toString() || "",
@@ -740,7 +715,7 @@ const [newStatus, setNewStatus] = useState<ListingStatus | null>(null);
   };
   
   // Handle location info change from marker drag
-  const handleLocationInfoChange = (city: string, state: string, address?: string) => {
+  const handleLocationInfoChange = (city: string, state: string) => {
     if (city) {
       form.setValue('city', city);
     }
@@ -750,10 +725,6 @@ const [newStatus, setNewStatus] = useState<ListingStatus | null>(null);
       if (states.includes(state)) {
         form.setValue('state', state);
       }
-    }
-    
-    if (address) {
-      form.setValue('address', address); // Now correctly typed
     }
   };
 
@@ -807,70 +778,7 @@ const [newStatus, setNewStatus] = useState<ListingStatus | null>(null);
     }
   };
 
-  // Enhanced address search function - similar to AddListing
-  const handleAddressSearch = async () => {
-    const currentAddress = form.getValues('address');
-    const currentCity = form.getValues('city');
-    const currentState = form.getValues('state');
-    
-    if (!currentAddress) {
-      toast({
-        variant: "destructive",
-        title: "Address missing",
-        description: "Please enter a street address to search"
-      });
-      return;
-    }
-    
-    // Show searching toast
-    toast({
-      title: "Searching...",
-      description: "Looking up the address coordinates"
-    });
-    
-    try {
-      // Create a search query with whatever information is available
-      let query = currentAddress;
-      if (currentCity) query += `, ${currentCity}`;
-      if (currentState) query += `, ${currentState}`;
-      query += ', USA';
-      
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`
-      );
-      const data = await response.json();
-      
-      if (data && data.length > 0) {
-        const { lat, lon } = data[0];
-        const latitude = parseFloat(lat);
-        const longitude = parseFloat(lon);
-        
-        handleLocationFound(latitude, longitude);
-        setAddressSearchTriggered(prev => !prev); // Toggle to trigger address search
-        
-        toast({
-          title: "Location found",
-          description: `Found coordinates for the provided address`,
-          variant: "default"
-        });
-      } else {
-        toast({
-          variant: "destructive",
-          title: "Address not found",
-          description: "Could not find this address. Please check the address and try again."
-        });
-      }
-    } catch (error) {
-      console.error("Error searching address:", error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "An error occurred while searching for the address. Please try again."
-      });
-    }
-  };
-
-  // File selection handler - similar to AddListing
+  // File selection handler
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const selectedFiles = Array.from(e.target.files);
@@ -940,87 +848,7 @@ const [newStatus, setNewStatus] = useState<ListingStatus | null>(null);
     setExistingImages(prev => prev.filter(img => img.id !== imageId));
   };
 
-  // Set an existing image as primary
-  const setExistingImageAsPrimary = (imageId: string) => {
-    // Mark this image as primary in state
-    setPrimaryImageId(imageId);
-    
-    // Update all existing images to reflect the new primary selection
-    setExistingImages(existingImages.map(img => ({
-      ...img,
-      is_primary: img.id === imageId
-    })));
-    
-    toast({
-      title: "Primary image set",
-      description: "This image will be displayed as the main image for your listing.",
-      duration: 2000,
-    });
-  };
-  
-  // Set a new image as primary
-  const setNewImageAsPrimary = (id: string) => {
-    // Clear primary flag from existing images
-    setExistingImages(existingImages.map(img => ({
-      ...img,
-      is_primary: false
-    })));
-    
-    // Mark this new image as primary
-    setPrimaryImageId(id);
-    
-    // Update all new images to reflect the primary selection
-    setImages(images.map(img => ({
-      ...img,
-      isPrimary: img.id === id
-    })));
-    
-    toast({
-      title: "Primary image set",
-      description: "This image will be displayed as the main image for your listing.",
-      duration: 2000,
-    });
-  };
-
-  // Update database to reflect primary image changes
-  const updatePrimaryImage = async (listingId: number | string, primaryId: string | null) => {
-    if (!primaryId) return true; // Nothing to update
-    
-    try {
-      // Check if the primary image is an existing one or a new one
-      const existingImage = existingImages.find(img => img.id === primaryId);
-      
-      if (existingImage) {
-        // Update existing images in database - set all to not primary first
-        await supabase
-          .from('listing_images')
-          .update({ is_primary: false })
-          .eq('listing_id', listingId);
-        
-        // Then set the selected one to primary
-        await supabase
-          .from('listing_images')
-          .update({ is_primary: true })
-          .eq('id', primaryId);
-          
-        return true;
-      } else {
-        // For new uploads, the primary flag will be set during upload
-        // Just make sure we clear primary flag from existing images
-        await supabase
-          .from('listing_images')
-          .update({ is_primary: false })
-          .eq('listing_id', listingId);
-          
-        return true;
-      }
-    } catch (error) {
-      console.error("Error updating primary image:", error);
-      return false;
-    }
-  };
-
-  // Upload new images - modified to handle primary flag
+  // Upload new images
   const uploadNewImages = async (listingId: number | string) => {
     if (!user) {
       console.error("User not authenticated");
@@ -1085,16 +913,14 @@ const [newStatus, setNewStatus] = useState<ListingStatus | null>(null);
           )
         );
         
-        // Create database record for the image - check if this is the primary image
-        const isPrimary = image.id === primaryImageId;
-        
+        // Create database record for the image
         const { error: dbError } = await supabase
           .from('listing_images')
           .insert([{
             listing_id: listingId,
             storage_path: filePath,
             position: position,
-            is_primary: isPrimary
+            is_primary: position === 0 && existingImages.length === 0 // First image is primary if no other images exist
           }]);
             
         if (dbError) throw dbError;
@@ -1309,7 +1135,6 @@ const confirmStatusChange = () => {
         description: values.description.trim(),
         city: values.city.trim(),
         state: values.state,
-        address: values.address.trim(), // Include address
         latitude: values.latitude,
         longitude: values.longitude,
         num_sites: parseInt(values.numSites),
@@ -1334,11 +1159,6 @@ const confirmStatusChange = () => {
       
       if (updateError) {
         throw new Error(`Error updating listing: ${updateError.message}`);
-      }
-      
-      // Handle primary image changes before other image operations
-      if (primaryImageId) {
-        await updatePrimaryImage(id, primaryImageId);
       }
       
       // Handle deleted images
@@ -1640,49 +1460,7 @@ const confirmStatusChange = () => {
                 />
               </div>
               
-              {/* Address field - now properly included in the schema */}
-              <FormField
-                control={form.control}
-                name="address" // Now correctly typed
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Street Address</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input 
-                          placeholder="123 Main Street" 
-                          className="pl-9" 
-                          {...field} // Now correctly typed
-                          maxLength={200}
-                          // Auto-trigger address search when user enters address and moves to next field
-                          onBlur={(e) => {
-                            field.onBlur();
-                            if (field.value && typeof field.value === 'string' && field.value.length > 5) {
-                              handleAddressSearch();
-                            }
-                          }}
-                        />
-                        <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      </div>
-                    </FormControl>
-                    <FormDescription className="flex justify-between">
-                      <span>Enter the street address of your property</span>
-                      <Button 
-                        type="button" 
-                        variant="ghost" 
-                        size="sm"
-                        className="px-2 py-0 h-auto text-sm text-blue-600 hover:text-blue-800"
-                        onClick={handleAddressSearch}
-                      >
-                        Find by Address
-                      </Button>
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              {/* Map Location Section - updated like AddListing */}
+              {/* Map Location Section */}
               <div className="space-y-4 pt-2">
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-medium flex items-center gap-2">
@@ -1724,13 +1502,6 @@ const confirmStatusChange = () => {
                           state={state} 
                           onLocationFound={handleLocationFound}
                           searchTriggered={searchTriggered}
-                        />
-                        <AddressSearch 
-                          address={form.getValues('address') || ''} // Ensure it's a string
-                          city={city}
-                          state={state}
-                          onLocationFound={handleLocationFound}
-                          searchTriggered={addressSearchTriggered}
                         />
                       </MapContainer>
                     </div>
@@ -1991,34 +1762,27 @@ const confirmStatusChange = () => {
               />
             </div>
             
-            {/* Image Upload Section - Updated to handle primary image selection */}
+            {/* Image Upload Section */}
             <div className="space-y-4">
               <h2 className="text-lg font-medium border-b pb-2">Property Images</h2>
               
               <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <label className="block text-sm font-medium text-gray-700">Current Images</label>
-                  <p className="text-xs text-gray-500">
-                    Click "Set as Primary" to select your main listing image
-                  </p>
-                </div>
+                <label className="block text-sm font-medium text-gray-700">Current Images</label>
                 <div className="flex flex-wrap gap-4">
-                  {/* Existing images - Updated with Set as Primary button */}
+                  {/* Existing images */}
                   {existingImages.map((image) => (
                     <div 
                       key={image.id}
-                      className={`relative w-24 h-24 rounded-md overflow-hidden border 
-                      ${image.id === primaryImageId ? 'border-blue-500 ring-2 ring-blue-400' : 'border-gray-200'}`}
+                      className="relative w-24 h-24 rounded-md overflow-hidden border border-gray-200"
                     >
                       <img 
                         src={image.url} 
                         alt="Property" 
                         className="w-full h-full object-cover"
                       />
-                      {/* Primary badge */}
-                      {image.id === primaryImageId && (
-                        <div className="absolute top-0 left-0 bg-blue-500 text-white px-1 py-0.5 text-xs font-medium">
-                          Primary
+                      {image.is_primary && (
+                        <div className="absolute top-1 left-1">
+                          <Badge variant="secondary" className="bg-white/80 text-xs">Primary</Badge>
                         </div>
                       )}
                       <button 
@@ -2028,37 +1792,20 @@ const confirmStatusChange = () => {
                       >
                         <X className="h-3 w-3 text-gray-700" />
                       </button>
-                      {/* Primary selection button - only show for non-primary images */}
-                      {image.id !== primaryImageId && (
-                        <button
-                          type="button"
-                          onClick={() => setExistingImageAsPrimary(image.id)}
-                          className="absolute bottom-1 right-1 left-1 bg-white/90 text-blue-600 text-[10px] py-0.5 rounded hover:bg-white font-medium"
-                        >
-                          Set as Primary
-                        </button>
-                      )}
                     </div>
                   ))}
                   
-                  {/* New images being uploaded - With primary selection */}
+                  {/* New images being uploaded */}
                   {images.map((image) => (
                     <div 
                       key={image.id} 
-                      className={`relative w-24 h-24 rounded-md overflow-hidden border 
-                      ${image.id === primaryImageId ? 'border-blue-500 ring-2 ring-blue-400' : 'border-gray-200'}`}
+                      className="relative w-24 h-24 rounded-md overflow-hidden border border-gray-200"
                     >
                       <img 
                         src={image.preview} 
                         alt="Preview" 
                         className="w-full h-full object-cover"
                       />
-                      {/* Primary badge */}
-                      {image.id === primaryImageId && (
-                        <div className="absolute top-0 left-0 bg-blue-500 text-white px-1 py-0.5 text-xs font-medium">
-                          Primary
-                        </div>
-                      )}
                       {image.progress > 0 && image.progress < 100 && (
                         <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                           <Progress value={image.progress} className="w-4/5 h-2" />
@@ -2076,16 +1823,6 @@ const confirmStatusChange = () => {
                       >
                         <X className="h-3 w-3 text-gray-700" />
                       </button>
-                      {/* Set primary button for new images */}
-                      {image.id !== primaryImageId && (
-                        <button
-                          type="button"
-                          onClick={() => setNewImageAsPrimary(image.id)}
-                          className="absolute bottom-1 right-1 left-1 bg-white/90 text-blue-600 text-[10px] py-0.5 rounded hover:bg-white font-medium"
-                        >
-                          Set as Primary
-                        </button>
-                      )}
                     </div>
                   ))}
                   
@@ -2110,11 +1847,6 @@ const confirmStatusChange = () => {
                 <p className="text-sm text-gray-500 mt-1">
                   Upload up to 5 high-quality images (JPG, PNG, WebP). Max 5MB per image.
                 </p>
-                {primaryImageId && (
-                  <p className="text-sm text-blue-600 mt-1">
-                    ✓ Primary image selected
-                  </p>
-                )}
                 {imagesToDelete.length > 0 && (
                   <p className="text-sm text-red-500">
                     {imagesToDelete.length} image(s) marked for deletion. Changes will be applied when you save.
@@ -2142,65 +1874,6 @@ const confirmStatusChange = () => {
       </div>
     );
   }
-};
-
-// Add the AddressSearch component that was missing from ListingEdit but present in AddListing
-interface AddressSearchProps {
-  address: string;
-  city: string;
-  state: string;
-  onLocationFound: (lat: number, lng: number) => void;
-  searchTriggered: boolean;
-}
-
-const AddressSearch: React.FC<AddressSearchProps> = ({ 
-  address, city, state, onLocationFound, searchTriggered 
-}) => {
-  const map = useMap();
-  const searchComplete = useRef(false);
-  const lastSearch = useRef("");
-  
-  useEffect(() => {
-    // Only search if address is provided and search was triggered
-    const fullAddress = `${address}, ${city}, ${state}, USA`.trim();
-    
-    if (fullAddress && searchTriggered && !searchComplete.current && fullAddress !== lastSearch.current) {
-      const searchLocation = async () => {
-        try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullAddress)}`
-          );
-          const data = await response.json();
-          
-          if (data && data.length > 0) {
-            const { lat, lon } = data[0];
-            const latitude = parseFloat(lat);
-            const longitude = parseFloat(lon);
-            
-            // Set the view and update marker
-            map.setView([latitude, longitude], 16);
-            onLocationFound(latitude, longitude);
-            searchComplete.current = true;
-            lastSearch.current = fullAddress;
-          }
-        } catch (error) {
-          console.error("Error finding address:", error);
-        }
-      };
-      
-      searchLocation();
-    }
-  }, [address, city, state, searchTriggered, map, onLocationFound]);
-  
-  // Reset search complete when address changes substantially
-  useEffect(() => {
-    const fullAddress = `${address}, ${city}, ${state}`.trim();
-    if (fullAddress !== lastSearch.current) {
-      searchComplete.current = false;
-    }
-  }, [address, city, state]);
-  
-  return null;
 };
 
 export default ListingEdit;

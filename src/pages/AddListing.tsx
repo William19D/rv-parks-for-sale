@@ -169,7 +169,6 @@ interface ImageUpload {
   uploaded?: boolean;
   path?: string;
   error?: string;
-  isPrimary?: boolean; // Add flag for primary image
 }
 
 // PDF upload interface - enhanced with fields matching listing_documents schema
@@ -561,7 +560,6 @@ const AddListing = () => {
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [images, setImages] = useState<ImageUpload[]>([]);
-  const [primaryImageId, setPrimaryImageId] = useState<string | null>(null);
   const [pdfs, setPdfs] = useState<PDFUpload[]>([]);
   const [selectedAmenities, setSelectedAmenities] = useState<Record<string, boolean>>({});
   const [markerPosition, setMarkerPosition] = useState<[number, number]>([39.8283, -98.5795]); // USA center
@@ -891,21 +889,12 @@ const AddListing = () => {
 
       // Create image objects
       const newImages = validFiles.map(file => {
-        const id = uuidv4();
-        const isPrimary = images.length === 0 && primaryImageId === null;
-        
-        // Set as primary if it's the first image ever added
-        if (isPrimary) {
-          setPrimaryImageId(id);
-        }
-        
         return {
           file,
           preview: URL.createObjectURL(file),
-          id,
+          id: uuidv4(),
           progress: 0,
-          uploaded: false,
-          isPrimary
+          uploaded: false
         };
       });
 
@@ -915,43 +904,10 @@ const AddListing = () => {
 
   // Image removal handler
   const removeImage = (id: string) => {
-    // Check if we're removing the primary image
-    if (primaryImageId === id) {
-      // If primary image is removed, select another one as primary if available
-      const remainingImages = images.filter(img => img.id !== id);
-      if (remainingImages.length > 0) {
-        setPrimaryImageId(remainingImages[0].id);
-        setImages(remainingImages.map((img, index) => 
-          index === 0 ? { ...img, isPrimary: true } : { ...img, isPrimary: false }
-        ));
-      } else {
-        setPrimaryImageId(null);
-        setImages([]);
-      }
-    } else {
-      // Just remove the image
-      setImages(images.filter(image => image.id !== id));
-    }
-  };
-  
-  // Set an image as primary
-  const setPrimaryImage = (id: string) => {
-    setPrimaryImageId(id);
-    
-    // Update all images to reflect the new primary selection
-    setImages(images.map(img => ({
-      ...img,
-      isPrimary: img.id === id
-    })));
-    
-    toast({
-      title: "Primary image set",
-      description: "This image will be displayed as the main image for your listing.",
-      duration: 2000,
-    });
+    setImages(images.filter(image => image.id !== id));
   };
 
-  // Upload images to Supabase - modified to handle primary image flag
+  // Upload images to Supabase - keeping this as is since it works
   const uploadImagesToSupabase = async (listingId: number) => {
     if (!user) {
       console.error("User not authenticated");
@@ -1030,14 +986,14 @@ const AddListing = () => {
         // Only proceed with DB update if storage upload succeeded
         if (uploadSuccess) {
           try {
-            // Create database record - using isPrimary flag from the image
+            // Create database record with simplified fields
             const { error: dbError } = await supabase
               .from('listing_images')
               .insert([{
                 listing_id: listingId,
                 storage_path: filePath,
                 position: i,
-                is_primary: image.isPrimary || image.id === primaryImageId // Use either flag
+                is_primary: i === 0  // First image is primary
               }]);
                 
             if (dbError) throw dbError;
@@ -1368,14 +1324,12 @@ const uploadPDFsToSupabase = async (listingId: number) => {
 
   // Form submission handler
   const onSubmit = async (values: z.infer<typeof listingSchema>) => {
-    // Ensure user is authenticated
-    if (!user || !user.id) {
+    if (!user) {
       toast({
         variant: "destructive",
         title: "Authentication required",
         description: "You must be logged in to create a listing."
       });
-      navigate("/login"); // Redirect to login page
       return;
     }
     
@@ -1415,7 +1369,6 @@ const uploadPDFsToSupabase = async (listingId: number) => {
         throw new Error("Annual revenue is too large for database. Maximum value is 9,999,999,999.99");
       }
       
-      // Explicitly set user_id from authenticated user
       const listingData = {
         title: values.title.trim(),
         price: price,
@@ -1429,15 +1382,14 @@ const uploadPDFsToSupabase = async (listingId: number) => {
         occupancy_rate: parseFloat(values.occupancyRate),
         annual_revenue: annual_revenue,
         cap_rate: parseFloat(values.capRate),
-        user_id: user.id, // Set the user ID from auth context
+        user_id: user.id,
         created_at: new Date().toISOString(),
         status: 'pending',
         property_type: values.propertyType,
         amenities: values.amenities
       };
       
-      console.log("Submitting listing with user ID:", user.id);
-      console.log("Listing data:", listingData);
+      console.log("Submitting listing with validated numeric fields:", listingData);
       
       // Insert into listings table
       const { data, error } = await supabase
@@ -2016,35 +1968,24 @@ const uploadPDFsToSupabase = async (listingId: number) => {
                 />
               </div>
               
-              {/* Image Upload Section - Updated with primary selection */}
+              {/* Image Upload Section */}
               <div className="space-y-4">
                 <h2 className="text-lg font-medium border-b pb-2">Property Images</h2>
                 
                 <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="block text-sm font-medium text-gray-700">Upload Images</label>
-                    <p className="text-xs text-gray-500">
-                      Click "Set as Primary" to select your main listing image
-                    </p>
-                  </div>
+                  <label className="block text-sm font-medium text-gray-700">Upload Images</label>
                   <div className="flex flex-wrap gap-4">
                     {/* Current Images */}
                     {images.map((image) => (
                       <div 
                         key={image.id} 
-                        className={`relative w-24 h-24 rounded-md overflow-hidden border ${image.id === primaryImageId ? 'border-blue-500 ring-2 ring-blue-400' : 'border-gray-200'}`}
+                        className="relative w-24 h-24 rounded-md overflow-hidden border border-gray-200"
                       >
                         <img 
                           src={image.preview} 
                           alt="Preview" 
                           className="w-full h-full object-cover"
                         />
-                        {/* Primary badge */}
-                        {image.id === primaryImageId && (
-                          <div className="absolute top-0 left-0 bg-blue-500 text-white px-1 py-0.5 text-xs font-medium">
-                            Primary
-                          </div>
-                        )}
                         {image.progress > 0 && image.progress < 100 && (
                           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                             <Progress value={image.progress} className="w-4/5 h-2" />
@@ -2062,16 +2003,6 @@ const uploadPDFsToSupabase = async (listingId: number) => {
                         >
                           <X className="h-3 w-3 text-gray-700" />
                         </button>
-                        {/* Primary selection button - only show for non-primary images */}
-                        {image.id !== primaryImageId && (
-                          <button
-                            type="button"
-                            onClick={() => setPrimaryImage(image.id)}
-                            className="absolute bottom-1 right-1 left-1 bg-white/90 text-blue-600 text-[10px] py-0.5 rounded hover:bg-white font-medium"
-                          >
-                            Set as Primary
-                          </button>
-                        )}
                       </div>
                     ))}
                     
@@ -2096,14 +2027,9 @@ const uploadPDFsToSupabase = async (listingId: number) => {
                   <p className="text-sm text-gray-500 mt-1">
                     Upload up to 5 high-quality images (JPG, PNG, WebP). Max 5MB per image.
                   </p>
-                  {primaryImageId && (
-                    <p className="text-sm text-blue-600 mt-1">
-                      ✓ Primary image selected
-                    </p>
-                  )}
                 </div>
               </div>
-              
+
               {/* PDF Upload Section */}
               <div className="space-y-4">
                 <h2 className="text-lg font-medium border-b pb-2">Property Documents</h2>
@@ -2196,7 +2122,6 @@ const uploadPDFsToSupabase = async (listingId: number) => {
                       </FormControl>
                       <FormDescription>
                         Please complete the CAPTCHA verification to submit your listing
-
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -2231,3 +2156,4 @@ const uploadPDFsToSupabase = async (listingId: number) => {
 };
 
 export default AddListing;
+                

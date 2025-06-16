@@ -8,7 +8,6 @@ import {
   User,
   LogOut,
   PlusCircle,
-  LifeBuoy,
   LucideIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -196,9 +195,9 @@ const MobileNavItem = memo(({ item, setMenuOpen }: {
 });
 
 // Componente para la sección de autenticación (memoizado)
-const AuthSection = memo(({ user, status, signOut, isMobile, setMenuOpen }: {
+const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
   user: any;
-  status: string;
+  loading: boolean;
   signOut: () => Promise<void>;
   isMobile: boolean;
   setMenuOpen: (isOpen: boolean) => void;
@@ -247,21 +246,7 @@ const AuthSection = memo(({ user, status, signOut, isMobile, setMenuOpen }: {
     window.scrollTo({ top: 0, behavior: "instant" });
   };
 
-  const goToProfile = (e: React.MouseEvent) => {
-    e.preventDefault();
-    navigate('/profile/');
-    setMenuOpen(false);
-    window.scrollTo({ top: 0, behavior: "instant" });
-  };
-
-  const goToSupport = (e: React.MouseEvent) => {
-    e.preventDefault();
-    navigate('/support/');
-    setMenuOpen(false);
-    window.scrollTo({ top: 0, behavior: "instant" });
-  };
-
-  if (status === 'loading') {
+  if (loading) {
     return <div className="animate-pulse h-8 w-20 bg-gray-200 rounded"></div>;
   }
   
@@ -271,28 +256,12 @@ const AuthSection = memo(({ user, status, signOut, isMobile, setMenuOpen }: {
         {/* Contenido para usuario autenticado */}
         {isMobile ? (
           <div className="space-y-2">
-            <div 
-              className="text-sm px-3 py-2 flex items-center space-x-2 rounded-md hover:bg-gray-100 cursor-pointer"
-              onClick={goToProfile}
-            >
-              <User className="h-4 w-4 text-[#f74f4f]" />
-              <span>Hello, <span className="font-medium">{userName || user.email?.split('@')[0]}</span></span>
+            <div className="text-sm text-gray-600 px-3 py-2">
+              <div className="flex items-center space-x-2">
+                <User className="h-4 w-4" />
+                <span>Hello, <span className="font-medium">{userName || user.email?.split('@')[0]}</span></span>
+              </div>
             </div>
-            <a 
-              href="/profile/" 
-              onClick={(e) => handleNavigation(e, "/profile")}
-              className="block px-3 py-2 text-sm hover:bg-gray-100 rounded-md"
-            >
-              View Profile
-            </a>
-            <a 
-              href="/support/" 
-              onClick={goToSupport}
-              className="block px-3 py-2 text-sm hover:bg-gray-100 rounded-md flex items-center"
-            >
-              <LifeBuoy className="h-4 w-4 mr-2 text-[#f74f4f]" />
-              Get Support
-            </a>
             <Button 
               variant="outline" 
               className="w-full"
@@ -304,19 +273,7 @@ const AuthSection = memo(({ user, status, signOut, isMobile, setMenuOpen }: {
           </div>
         ) : (
           <div className="flex items-center space-x-2">
-            <Button 
-              variant="ghost"
-              size="sm"
-              className="text-gray-600 hover:text-[#f74f4f] flex items-center gap-1"
-              onClick={goToSupport}
-            >
-              <LifeBuoy className="h-4 w-4" />
-              <span className="sr-only md:not-sr-only">Support</span>
-            </Button>
-            <div 
-              className="flex items-center bg-gray-100 rounded-full p-2 cursor-pointer hover:bg-gray-200 transition-colors"
-              onClick={goToProfile}
-            >
+            <div className="flex items-center bg-gray-100 rounded-full p-2">
               <User className="h-4 w-4 text-gray-600 mr-2" />
               <span className="text-sm font-medium text-gray-700">
                 {userName || user.email?.split('@')[0]}
@@ -388,7 +345,7 @@ const AuthSection = memo(({ user, status, signOut, isMobile, setMenuOpen }: {
 // Componente Header memoizado para prevenir re-renderizados innecesarios
 export const Header = memo(() => {
   const isMobile = useIsMobile();
-  const { user, signOut, status } = useAuth();
+  const { user, signOut, loading } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
@@ -571,7 +528,7 @@ export const Header = memo(() => {
                       <div className="pt-2 mt-2 border-t border-gray-200">
                         <AuthSection
                           user={user}
-                          status={status}
+                          loading={loading}
                           signOut={signOut}
                           isMobile={isMobile}
                           setMenuOpen={setMenuOpen}
@@ -591,7 +548,7 @@ export const Header = memo(() => {
               <div className="ml-4 flex items-center space-x-2">
                 <AuthSection
                   user={user}
-                  status={status}
+                  loading={loading}
                   signOut={signOut}
                   isMobile={isMobile}
                   setMenuOpen={setMenuOpen}
