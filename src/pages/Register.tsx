@@ -1,17 +1,24 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertCircle } from "lucide-react";
 import HCaptcha from '@hcaptcha/react-hcaptcha';
 
-// Get hCaptcha site key from environment variables
+// Environment detection
+const IS_DEV = import.meta.env.DEV === true || window.location.hostname === 'localhost';
+
+// Get environment variables with fallbacks
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const HCAPTCHA_SITE_KEY = import.meta.env.VITE_HCAPTCHA_SITE_KEY || '10000000-ffff-ffff-ffff-000000000001';
+
+// Construct API URL from Supabase URL if not explicitly provided
+const AUTH_API_URL = import.meta.env.VITE_AUTH_API_URL || 
+                   (SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/auth-service` : '');
 
 const Register = () => {
   const [email, setEmail] = useState("");
@@ -22,10 +29,29 @@ const Register = () => {
   const [lastName, setLastName] = useState("");
   const [loading, setLoading] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
   const captchaRef = useRef<HCaptcha | null>(null);
   
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Log configuration information once on component mount
+  useEffect(() => {
+    console.log("Environment:", IS_DEV ? "Development" : "Production");
+    console.log("Auth API URL:", AUTH_API_URL);
+    console.log("Origin:", window.location.origin);
+    
+    // This will help debug if the API URL is properly set
+    setDebugInfo(`API: ${AUTH_API_URL ? AUTH_API_URL : "Not configured"}`);
+  }, []);
+  
+  // Clear form error when inputs change
+  useEffect(() => {
+    if (formError) {
+      setFormError(null);
+    }
+  }, [email, password, confirmPassword, phone, firstName, lastName, captchaToken, formError]);
 
   // Format phone number as user types
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -49,212 +75,209 @@ const Register = () => {
   const handleVerificationSuccess = (token: string) => {
     console.log('[Register] hCaptcha verification successful');
     setCaptchaToken(token);
+    setDebugInfo(`Captcha verified: ${token.substring(0, 10)}...`);
   };
 
   const handleCaptchaError = () => {
     console.error('[Register] hCaptcha verification failed');
-    toast({
-      title: "Verification Error",
-      description: "Failed to verify that you're not a robot. Please try again.",
-      variant: "destructive",
-    });
+    setFormError("Captcha verification failed. Please try again.");
+    setDebugInfo("Captcha error occurred");
+  };
+
+  // Validate all form fields
+  const validateForm = () => {
+    // Validate first name
+    if (!firstName.trim()) {
+      setFormError("Please enter your first name");
+      return false;
+    }
+    
+    // Validate last name
+    if (!lastName.trim()) {
+      setFormError("Please enter your last name");
+      return false;
+    }
+    
+    // Validate email
+    if (!email.trim()) {
+      setFormError("Please enter your email address");
+      return false;
+    }
+    
+    if (!email.includes('@') || !email.includes('.')) {
+      setFormError("Please enter a valid email address");
+      return false;
+    }
+    
+    // Validate phone number
+    const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+    if (!phone) {
+      setFormError("Please enter your phone number");
+      return false;
+    }
+    
+    if (!phoneRegex.test(phone)) {
+      setFormError("Please enter a valid phone number in the format (XXX) XXX-XXXX");
+      return false;
+    }
+    
+    // Validate password
+    if (!password) {
+      setFormError("Please enter a password");
+      return false;
+    }
+    
+    if (password.length < 6) {
+      setFormError("Password must be at least 6 characters long");
+      return false;
+    }
+    
+    if (!confirmPassword) {
+      setFormError("Please confirm your password");
+      return false;
+    }
+    
+    if (password !== confirmPassword) {
+      setFormError("Passwords don't match");
+      return false;
+    }
+    
+    // Check for captcha in development mode
+    if (!IS_DEV && !captchaToken) {
+      setFormError("Please complete the security verification");
+      return false;
+    }
+    
+    return true;
+  };
+
+  // Register using edge function
+  const registerWithEdgeFunction = async () => {
+    setDebugInfo(`Sending request to: ${AUTH_API_URL}`);
+    console.log(`[Register] Sending registration request to: ${AUTH_API_URL}`);
+
+    if (!AUTH_API_URL) {
+      throw new Error("Authentication API URL is not configured. Please contact support.");
+    }
+
+    const requestBody = {
+      action: "signup",
+      email,
+      password,
+      userData: {
+        first_name: firstName,
+        last_name: lastName,
+        phone_number: phone,
+        role: 'user',
+        captchaToken: captchaToken || "development-mode-bypass"
+      },
+      redirectUrl: `${window.location.origin}/auth/callback`
+    };
+    
+    console.log('[Register] Request payload:', JSON.stringify(requestBody));
+    setDebugInfo(`Sending data for: ${email}`);
+
+    try {
+      const response = await fetch(AUTH_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Origin': window.location.origin
+        },
+        body: JSON.stringify(requestBody)
+      });
+      
+      // Debug information
+      console.log("[Register] Response status:", response.status);
+      setDebugInfo(`Response status: ${response.status}`);
+      
+      const responseText = await response.text();
+      console.log("[Register] Response text:", responseText);
+      
+      if (!response.ok) {
+        // Parse error if possible
+        if (responseText) {
+          try {
+            const errorData = JSON.parse(responseText);
+            throw new Error(errorData.error || `Failed to register. Server returned ${response.status}`);
+          } catch (e) {
+            throw new Error(`Failed to register. Server returned ${response.status}`);
+          }
+        }
+        throw new Error(`Failed to register. Server returned ${response.status}`);
+      }
+      
+      // Parse successful response
+      if (responseText) {
+        try {
+          const result = JSON.parse(responseText);
+          setDebugInfo(`Success! User ID: ${result.user?.id}`);
+          return result.user;
+        } catch (e) {
+          console.error("[Register] Failed to parse response:", e);
+          throw new Error("Invalid response format from server");
+        }
+      }
+      
+      throw new Error("Empty response from server");
+    } catch (error) {
+      setDebugInfo(`Network error: ${error instanceof Error ? error.message : "Unknown"}`);
+      throw error;
+    }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("[Register] Form submitted");
+    setDebugInfo("Form submitted");
     
-    // Validación para campos requeridos
-    if (!firstName) {
-      toast({
-        title: "Required Field",
-        description: "Please enter your first name",
-        variant: "destructive",
-      });
-      return;
-    }
+    // Clear any previous errors
+    setFormError(null);
     
-    if (!lastName) {
-      toast({
-        title: "Required Field",
-        description: "Please enter your last name",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (!email) {
-      toast({
-        title: "Required Field",
-        description: "Please enter your email address",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (!email.includes('@')) {
-      toast({
-        title: "Invalid Email",
-        description: "Please enter a valid email address",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (!password) {
-      toast({
-        title: "Required Field",
-        description: "Please enter a password",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (!confirmPassword) {
-      toast({
-        title: "Required Field",
-        description: "Please confirm your password",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (password !== confirmPassword) {
-      toast({
-        title: "Error",
-        description: "Passwords don't match",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (password.length < 6) {
-      toast({
-        title: "Error",
-        description: "Password must be at least 6 characters long",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    // Validate US phone number format
-    const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-    if (!phone) {
-      toast({
-        title: "Required Field",
-        description: "Please enter your phone number",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    if (!phoneRegex.test(phone)) {
-      toast({
-        title: "Invalid Phone",
-        description: "Please enter a valid phone number in the format (XXX) XXX-XXXX",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Check if captcha is completed
-    if (!captchaToken) {
-      toast({
-        title: "Verification required",
-        description: "Please complete the captcha verification",
-        variant: "destructive",
-      });
+    // Validate all form fields
+    if (!validateForm()) {
+      console.log("[Register] Form validation failed");
+      setDebugInfo("Validation failed");
       return;
     }
 
     setLoading(true);
+    setDebugInfo("Processing... please wait");
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            first_name: firstName,
-            last_name: lastName,
-            phone_number: phone
-          },
-          // Include captcha token in the registration
-          captchaToken,
-          // Redirigir al callback de auth para que podamos interceptarlo
-          emailRedirectTo: `${window.location.origin}/auth/callback`
-        }
+      // Only use edge function for registration
+      const user = await registerWithEdgeFunction();
+      
+      // Log success
+      console.log("[Register] Registration successful:", user?.id);
+      
+      // Save user info locally
+      localStorage.setItem('userPhone', phone);
+      localStorage.setItem('userFirstName', firstName);
+      localStorage.setItem('userLastName', lastName);
+      localStorage.setItem('userEmail', email);
+      
+      toast({
+        title: "Registration successful!",
+        description: "Check your email to confirm your account",
       });
       
-      if (error) {
-        // Reset captcha if registration fails
-        captchaRef.current?.resetCaptcha();
-        setCaptchaToken(null);
-        
-        toast({
-          title: "Error",
-          description: error.message,
-          variant: "destructive",
-        });
-      } else {
-        // Comprobamos si el usuario se creó correctamente
-        if (data.user) {
-          // Verificamos si ya existe (para detectar emails ya registrados)
-          if (data.user.identities && data.user.identities.length === 0) {
-            // Reset captcha if email already registered
-            captchaRef.current?.resetCaptcha();
-            setCaptchaToken(null);
-            
-            toast({
-              title: "Email already registered",
-              description: "This email is already registered. Please login or use a different email.",
-              variant: "destructive",
-            });
-          } else {
-            // Segundo paso: Asegurar que se guarden los metadatos con una actualización explícita
-            // Esto es una protección adicional por si la primera vez no se guardó bien
-            if (data.session) {
-              const { error: updateError } = await supabase.auth.updateUser({
-                data: { 
-                  first_name: firstName,
-                  last_name: lastName,
-                  phone_number: phone 
-                }
-              });
-              
-              if (updateError) {
-                console.error("Error updating user metadata:", updateError);
-              }
-            }
-            
-            // Guardar en el almacenamiento local para uso posterior
-            localStorage.setItem('userPhone', phone);
-            localStorage.setItem('userFirstName', firstName);
-            localStorage.setItem('userLastName', lastName);
-            
-            toast({
-              title: "Registration successful!",
-              description: "Check your email to confirm your account",
-            });
-            navigate("/verify-email");
-          }
-        } else {
-          toast({
-            title: "Registration issue",
-            description: "Account created but user data not available. Please try logging in.",
-          });
-          navigate("/verify-email");
-        }
-      }
+      navigate("/verify-email");
+      
     } catch (error) {
-      console.error('Registration error:', error);
+      console.error('[Register] Registration error:', error);
       
       // Reset captcha on error
       captchaRef.current?.resetCaptcha();
       setCaptchaToken(null);
       
+      // Set form error
+      setFormError(error instanceof Error ? error.message : "Connection error. Please check your network and try again.");
+      
+      // Also show toast for visibility
       toast({
-        title: "Error",
-        description: "Configuration error. Check your Supabase connection.",
+        title: "Registration Failed",
+        description: error instanceof Error ? error.message : "Connection error. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -276,8 +299,15 @@ const Register = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {formError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-start">
+                <AlertCircle className="h-5 w-5 text-red-500 mr-2 mt-0.5" />
+                <span className="text-red-800 text-sm">{formError}</span>
+              </div>
+            )}
+            
             <form onSubmit={handleRegister} className="space-y-4" noValidate>
-              {/* Nuevos campos para nombre y apellido */}
+              {/* Name fields */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="firstName">First Name</Label>
@@ -287,6 +317,8 @@ const Register = () => {
                     placeholder="John"
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
+                    disabled={loading}
+                    className={!firstName && formError ? "border-red-300" : ""}
                   />
                 </div>
                 <div>
@@ -297,6 +329,8 @@ const Register = () => {
                     placeholder="Doe"
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
+                    disabled={loading}
+                    className={!lastName && formError ? "border-red-300" : ""}
                   />
                 </div>
               </div>
@@ -309,6 +343,8 @@ const Register = () => {
                   placeholder="your@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading}
+                  className={!email && formError ? "border-red-300" : ""}
                 />
               </div>
               <div>
@@ -320,6 +356,8 @@ const Register = () => {
                   value={phone}
                   onChange={handlePhoneChange}
                   maxLength={14}
+                  disabled={loading}
+                  className={!phone && formError ? "border-red-300" : ""}
                 />
               </div>
               <div>
@@ -330,6 +368,8 @@ const Register = () => {
                   placeholder="Minimum 6 characters"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
+                  className={!password && formError ? "border-red-300" : ""}
                 />
               </div>
               <div>
@@ -340,6 +380,8 @@ const Register = () => {
                   placeholder="Confirm your password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={loading}
+                  className={!confirmPassword && formError ? "border-red-300" : ""}
                 />
               </div>
               
@@ -351,13 +393,27 @@ const Register = () => {
                   onVerify={handleVerificationSuccess}
                   onError={handleCaptchaError}
                   onExpire={() => setCaptchaToken(null)}
+                  theme="light"
                 />
               </div>
+              
+              {/* Bypass captcha in dev mode - REMOVE IN PRODUCTION */}
+              {IS_DEV && !captchaToken && (
+                <div className="text-xs p-2 bg-yellow-50 text-yellow-700 rounded">
+                  <button 
+                    type="button" 
+                    onClick={() => setCaptchaToken("dev-bypass-token")}
+                    className="underline hover:text-yellow-800"
+                  >
+                    Dev mode: Click to bypass captcha
+                  </button>
+                </div>
+              )}
               
               <Button 
                 type="submit" 
                 className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]"
-                disabled={loading || !captchaToken}
+                disabled={loading}
               >
                 {loading ? (
                   <>
@@ -367,17 +423,26 @@ const Register = () => {
                 ) : "Create Account"}
               </Button>
             </form>
-            <div className="mt-4 text-center">
+            <div className="mt-6 text-center">
               <p className="text-sm text-gray-600">
                 Already have an account?{" "}
                 <Link 
                   to="/login" 
                   className="text-[#f74f4f] hover:text-[#e43c3c] font-medium"
+                  tabIndex={loading ? -1 : 0}
                 >
                   Sign in here
                 </Link>
               </p>
             </div>
+            
+            {/* Debug information - will show only in development */}
+            {IS_DEV && debugInfo && (
+              <div className="mt-4 p-2 bg-gray-100 text-gray-700 text-xs rounded">
+                <strong>Debug:</strong> {debugInfo}<br/>
+                <strong>Time:</strong> {new Date().toISOString()}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
