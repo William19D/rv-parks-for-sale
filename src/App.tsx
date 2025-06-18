@@ -126,6 +126,40 @@ const TrailingSlashHandler = () => {
   return null;
 };
 
+// Admin redirect component - ensures admins are directed to admin dashboard
+const AdminRedirect = () => {
+  const { user, isAdmin, loading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  useEffect(() => {
+    // Only proceed if auth is loaded and user exists
+    if (loading) return;
+    
+    if (user && isAdmin) {
+      const currentPath = location.pathname;
+      
+      // Don't redirect if user is already on an admin route
+      const isAlreadyOnAdminRoute = 
+        currentPath.startsWith('/admin/') || 
+        currentPath === '/admin';
+        
+      // Check if it's a fresh login through auth callback or login success page
+      const isAuthFlow = 
+        currentPath === '/auth/callback/' || 
+        currentPath === '/auth/success/' || 
+        currentPath === '/login/';
+        
+      if (!isAlreadyOnAdminRoute && (isAuthFlow || currentPath === '/')) {
+        console.log('[AdminRedirect] Detected admin user, redirecting to admin dashboard');
+        navigate('/admin/dashboard/', { replace: true });
+      }
+    }
+  }, [user, isAdmin, loading, location.pathname, navigate]);
+  
+  return null;
+};
+
 // Route handling component
 const AppRoutes = () => {
   const { user, loading, isAdmin, roles } = useAuth();
@@ -145,7 +179,6 @@ const AppRoutes = () => {
     console.log(`[Router] Route changed to: ${location.pathname}`);
     console.log(`[Router] Current auth state - User: ${user?.id || 'none'}`);
     console.log(`[Router] Is admin: ${isAdmin}, Roles: ${roles?.join(', ') || 'none'}`);
-    console.log(`[Router] External redirect required: ${isExternalRedirectRequired()}`);
   }, [location.pathname, user, isAdmin, roles]);
   
   // Show loader during authentication verification
@@ -160,6 +193,9 @@ const AppRoutes = () => {
   
   return (
     <>
+      {/* Add AdminRedirect component to handle admin redirections */}
+      <AdminRedirect />
+      
       {/* Only show header on non-admin routes */}
       {!isAdminRoute && (
         <>
@@ -170,7 +206,12 @@ const AppRoutes = () => {
       
       <Routes>
         {/* Public routes */}
-        <Route path="/" element={<Index />} />
+        <Route path="/" element={
+          // Redirect admins from home page to admin dashboard
+          user && isAdmin ? 
+            <Navigate to="/admin/dashboard/" replace /> : 
+            <Index />
+        } />
         <Route path="/listings" element={<Listings />} />
         <Route path="/listings/:id" element={<ListingDetail />} />
         
@@ -205,7 +246,7 @@ const AppRoutes = () => {
         {/* Authentication routes */}
         <Route path="/login" element={
           user ? (
-            isAdmin ? <Navigate to="/admin/dashboard" replace /> : <Navigate to="/" replace />
+            isAdmin ? <Navigate to="/admin/dashboard/" replace /> : <Navigate to="/" replace />
           ) : <Login />
         } />
         <Route path="/register" element={

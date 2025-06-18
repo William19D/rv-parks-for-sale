@@ -14,7 +14,7 @@ const IS_DEV = import.meta.env.DEV === true || window.location.hostname === 'loc
 
 // Get environment variables with fallbacks
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
-const HCAPTCHA_SITE_KEY = import.meta.env.VITE_HCAPTCHA_SITE_KEY || '10000000-ffff-ffff-ffff-000000000001';
+const HCAPTCHA_SITE_KEY = import.meta.env.VITE_HCAPTCHA_SITE_KEY || '';
 
 // Construct API URL from Supabase URL if not explicitly provided
 const AUTH_API_URL = import.meta.env.VITE_AUTH_API_URL || 
@@ -30,20 +30,16 @@ const Register = () => {
   const [loading, setLoading] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState<string | null>(null);
   const captchaRef = useRef<HCaptcha | null>(null);
   
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Log configuration information once on component mount
+  // Check if hCaptcha site key is configured
   useEffect(() => {
-    console.log("Environment:", IS_DEV ? "Development" : "Production");
-    console.log("Auth API URL:", AUTH_API_URL);
-    console.log("Origin:", window.location.origin);
-    
-    // This will help debug if the API URL is properly set
-    setDebugInfo(`API: ${AUTH_API_URL ? AUTH_API_URL : "Not configured"}`);
+    if (!HCAPTCHA_SITE_KEY) {
+      setFormError("Security verification is not properly configured. Please contact support.");
+    }
   }, []);
   
   // Clear form error when inputs change
@@ -73,15 +69,11 @@ const Register = () => {
 
   // Handle hCaptcha verification
   const handleVerificationSuccess = (token: string) => {
-    console.log('[Register] hCaptcha verification successful');
     setCaptchaToken(token);
-    setDebugInfo(`Captcha verified: ${token.substring(0, 10)}...`);
   };
 
   const handleCaptchaError = () => {
-    console.error('[Register] hCaptcha verification failed');
     setFormError("Captcha verification failed. Please try again.");
-    setDebugInfo("Captcha error occurred");
   };
 
   // Validate all form fields
@@ -142,9 +134,15 @@ const Register = () => {
       return false;
     }
     
-    // Check for captcha in development mode
-    if (!IS_DEV && !captchaToken) {
+    // Always require captcha verification
+    if (!captchaToken) {
       setFormError("Please complete the security verification");
+      return false;
+    }
+    
+    // Verify hCaptcha site key is configured
+    if (!HCAPTCHA_SITE_KEY) {
+      setFormError("Security verification is not properly configured. Please contact support.");
       return false;
     }
     
@@ -153,9 +151,6 @@ const Register = () => {
 
   // Register using edge function
   const registerWithEdgeFunction = async () => {
-    setDebugInfo(`Sending request to: ${AUTH_API_URL}`);
-    console.log(`[Register] Sending registration request to: ${AUTH_API_URL}`);
-
     if (!AUTH_API_URL) {
       throw new Error("Authentication API URL is not configured. Please contact support.");
     }
@@ -169,13 +164,10 @@ const Register = () => {
         last_name: lastName,
         phone_number: phone,
         role: 'user',
-        captchaToken: captchaToken || "development-mode-bypass"
+        captchaToken: captchaToken
       },
-      redirectUrl: `${window.location.origin}/auth/callback`
+      redirectUrl: `${window.location.origin}/rv-parks-for-sale/auth/callback/`
     };
-    
-    console.log('[Register] Request payload:', JSON.stringify(requestBody));
-    setDebugInfo(`Sending data for: ${email}`);
 
     try {
       const response = await fetch(AUTH_API_URL, {
@@ -187,12 +179,7 @@ const Register = () => {
         body: JSON.stringify(requestBody)
       });
       
-      // Debug information
-      console.log("[Register] Response status:", response.status);
-      setDebugInfo(`Response status: ${response.status}`);
-      
       const responseText = await response.text();
-      console.log("[Register] Response text:", responseText);
       
       if (!response.ok) {
         // Parse error if possible
@@ -211,45 +198,34 @@ const Register = () => {
       if (responseText) {
         try {
           const result = JSON.parse(responseText);
-          setDebugInfo(`Success! User ID: ${result.user?.id}`);
           return result.user;
         } catch (e) {
-          console.error("[Register] Failed to parse response:", e);
           throw new Error("Invalid response format from server");
         }
       }
       
       throw new Error("Empty response from server");
     } catch (error) {
-      setDebugInfo(`Network error: ${error instanceof Error ? error.message : "Unknown"}`);
       throw error;
     }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("[Register] Form submitted");
-    setDebugInfo("Form submitted");
     
     // Clear any previous errors
     setFormError(null);
     
     // Validate all form fields
     if (!validateForm()) {
-      console.log("[Register] Form validation failed");
-      setDebugInfo("Validation failed");
       return;
     }
 
     setLoading(true);
-    setDebugInfo("Processing... please wait");
 
     try {
       // Only use edge function for registration
       const user = await registerWithEdgeFunction();
-      
-      // Log success
-      console.log("[Register] Registration successful:", user?.id);
       
       // Save user info locally
       localStorage.setItem('userPhone', phone);
@@ -265,8 +241,6 @@ const Register = () => {
       navigate("/verify-email");
       
     } catch (error) {
-      console.error('[Register] Registration error:', error);
-      
       // Reset captcha on error
       captchaRef.current?.resetCaptcha();
       setCaptchaToken(null);
@@ -385,35 +359,31 @@ const Register = () => {
                 />
               </div>
               
-              {/* hCaptcha Component */}
-              <div className="flex justify-center py-2">
-                <HCaptcha
-                  ref={captchaRef}
-                  sitekey={HCAPTCHA_SITE_KEY}
-                  onVerify={handleVerificationSuccess}
-                  onError={handleCaptchaError}
-                  onExpire={() => setCaptchaToken(null)}
-                  theme="light"
-                />
-              </div>
-              
-              {/* Bypass captcha in dev mode - REMOVE IN PRODUCTION */}
-              {IS_DEV && !captchaToken && (
-                <div className="text-xs p-2 bg-yellow-50 text-yellow-700 rounded">
-                  <button 
-                    type="button" 
-                    onClick={() => setCaptchaToken("dev-bypass-token")}
-                    className="underline hover:text-yellow-800"
-                  >
-                    Dev mode: Click to bypass captcha
-                  </button>
+              {/* Security verification section */}
+              <div>
+                <Label className="block mb-2">Security Verification</Label>
+                <div className={`flex justify-center py-2 ${!captchaToken && formError ? "border border-red-300 rounded-md" : ""}`}>
+                  {HCAPTCHA_SITE_KEY ? (
+                    <HCaptcha
+                      ref={captchaRef}
+                      sitekey={HCAPTCHA_SITE_KEY}
+                      onVerify={handleVerificationSuccess}
+                      onError={handleCaptchaError}
+                      onExpire={() => setCaptchaToken(null)}
+                      theme="light"
+                    />
+                  ) : (
+                    <div className="text-sm text-red-500 p-2">
+                      Security verification not configured. Please contact support.
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
               
               <Button 
                 type="submit" 
                 className="w-full bg-[#f74f4f] hover:bg-[#e43c3c]"
-                disabled={loading}
+                disabled={loading || !captchaToken}
               >
                 {loading ? (
                   <>
@@ -435,14 +405,6 @@ const Register = () => {
                 </Link>
               </p>
             </div>
-            
-            {/* Debug information - will show only in development */}
-            {IS_DEV && debugInfo && (
-              <div className="mt-4 p-2 bg-gray-100 text-gray-700 text-xs rounded">
-                <strong>Debug:</strong> {debugInfo}<br/>
-                <strong>Time:</strong> {new Date().toISOString()}
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>

@@ -18,7 +18,7 @@ interface AuthContextType {
   hasPermission: (permission: Permission) => boolean;
   hasAnyPermission: (permissions: Permission[]) => boolean;
   hasAllPermissions: (permissions: Permission[]) => boolean;
-  refreshPermissions: () => Promise<void>;
+  refreshPermissions: () => Promise<Role | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -71,16 +71,26 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     const initAuth = async () => {
       console.log('[Auth] Initializing auth state');
       
-      const { data: { session: initialSession } } = await supabase.auth.getSession();
-      
-      setSession(initialSession);
-      setUser(initialSession?.user ?? null);
-      
-      if (initialSession?.user) {
-        await getUserRoleAndPermissions(initialSession);
+      try {
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('[Auth] Error getting session:', error);
+          setLoading(false);
+          return;
+        }
+        
+        setSession(initialSession);
+        setUser(initialSession?.user ?? null);
+        
+        if (initialSession?.user) {
+          await getUserRoleAndPermissions(initialSession);
+        }
+      } catch (err) {
+        console.error('[Auth] Error during initialization:', err);
+      } finally {
+        setLoading(false);
       }
-      
-      setLoading(false);
     };
 
     initAuth();
@@ -119,9 +129,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         // Set user role
         const userRole = data.role;
         setRoles([userRole]);
-        setIsAdmin(userRole === 'admin');
+        const adminStatus = userRole === 'admin';
+        setIsAdmin(adminStatus);
         
-        console.log(`[Auth] User role: ${userRole}`, data);
+        console.log(`[Auth] User role: ${userRole}, isAdmin: ${adminStatus}`);
 
         // Then fetch permissions for this role
         await getUserPermissions(currentSession, userRole);
@@ -136,43 +147,93 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           .eq('user_id', currentSession.user.id)
           .single();
 
-        if (roleError && roleError.code !== 'PGRST116') {
-          throw roleError;
+        if (roleError) {
+          if (roleError.code === 'PGRST116') { // No rows returned
+            // Handle case where no role exists yet by creating default role
+            const { data: newRole, error: insertError } = await supabase
+              .from('user_roles')
+              .insert({
+                user_id: currentSession.user.id,
+                role: 'user',
+                created_by: 'system'
+              })
+              .select('role')
+              .single();
+              
+            if (insertError) {
+              throw insertError;
+            }
+            
+            setRoles([newRole?.role || 'user']);
+            setIsAdmin(false);
+            return;
+          } else {
+            throw roleError;
+          }
         }
 
-        // Handle case where no role exists yet
-        if (!roleData) {
-          const newRole = 'user'; // Default role
-          setRoles([newRole]);
-          setIsAdmin(false);
-          return;
-        }
-
-        setRoles([roleData.role]);
-        setIsAdmin(roleData.role === 'admin');
+        const userRole = roleData?.role || 'user';
+        setRoles([userRole]);
+        const adminStatus = userRole === 'admin';
+        setIsAdmin(adminStatus);
         
-        // Fetch permissions directly
-        const { data: permData, error: permError } = await supabase
-          .from('role_permissions')
-          .select('permission')
-          .eq('role', roleData.role);
-
-        if (permError) {
-          throw permError;
-        }
-
-        if (permData) {
-          const perms = permData.map(p => p.permission);
-          setPermissions(perms);
-          console.log(`[Auth] User permissions: ${perms.join(', ')}`);
-        }
+        console.log(`[Auth] User role (direct): ${userRole}, isAdmin: ${adminStatus}`);
+        
+        // Get direct permissions
+        await fetchDirectPermissions(userRole);
       }
     } catch (error) {
       console.error('[Auth] Error fetching user role:', error);
       
+      // On error, check for admin status in user metadata as fallback
+      try {
+        // Check if user has admin role in metadata
+        const userMetadata = currentSession.user.user_metadata;
+        if (userMetadata && userMetadata.role === 'admin') {
+          console.log('[Auth] Admin role found in metadata');
+          setRoles(['admin']);
+          setIsAdmin(true);
+          setPermissions(['*']); // Admin has all permissions
+          return;
+        }
+      } catch (metadataError) {
+        console.error('[Auth] Error checking metadata:', metadataError);
+      }
+      
       // Set default role on error
       setRoles(['user']);
       setIsAdmin(false);
+      setPermissions([]);
+    }
+  };
+  
+  // Helper to fetch permissions directly from database
+  const fetchDirectPermissions = async (role: string) => {
+    // Admin has all permissions by default
+    if (role === 'admin') {
+      setPermissions(['*']);
+      return;
+    }
+    
+    try {
+      const { data: permData, error: permError } = await supabase
+        .from('role_permissions')
+        .select('permission')
+        .eq('role', role);
+
+      if (permError) {
+        throw permError;
+      }
+
+      if (permData && Array.isArray(permData)) {
+        const permsList = permData.map(p => p.permission);
+        setPermissions(permsList);
+        console.log(`[Auth] User permissions: ${permsList.join(', ')}`);
+      } else {
+        setPermissions([]);
+      }
+    } catch (error) {
+      console.error('[Auth] Error fetching direct permissions:', error);
       setPermissions([]);
     }
   };
@@ -186,53 +247,107 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         return;
       }
 
-      const response = await fetch(AUTH_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${currentSession.access_token}`
-        },
-        body: JSON.stringify({
-          action: 'get_role_permissions',
-          role
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Error fetching permissions: ${response.statusText}`);
+      // Try to use the edge function to get permissions
+      if (AUTH_API_URL) {
+        try {
+          const response = await fetch(AUTH_API_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${currentSession.access_token}`
+            },
+            body: JSON.stringify({
+              action: 'check_permission',
+              permission: 'view_admin_dashboard'  // Testing admin permission
+            })
+          });
+  
+          if (response.ok) {
+            const data = await response.json();
+            
+            if (data.hasPermission) {
+              // If user has admin dashboard permission, add it to permissions
+              setPermissions(prev => [...prev, 'view_admin_dashboard']);
+            }
+          }
+        } catch (permError) {
+          console.error('[Auth] Error checking admin permission:', permError);
+        }
       }
 
-      const data = await response.json();
+      // Fall back to direct DB query for permissions
+      await fetchDirectPermissions(role);
       
-      if (data.permissions && Array.isArray(data.permissions)) {
-        setPermissions(data.permissions);
-        console.log(`[Auth] User permissions: ${data.permissions.join(', ')}`);
-      } else {
-        setPermissions([]);
-      }
     } catch (error) {
       console.error('[Auth] Error fetching permissions:', error);
       setPermissions([]);
     }
   };
 
-  // Function to manually refresh permissions (useful after role changes)
-  const refreshPermissions = async () => {
-    if (!session) {
-      console.warn('[Auth] Cannot refresh permissions: No active session');
-      return;
+  // Function to manually refresh user's role and permissions
+  const refreshPermissions = async (): Promise<Role | null> => {
+    try {
+      if (!session) {
+        console.warn('[Auth] Cannot refresh permissions: No active session');
+        return null;
+      }
+      
+      console.log('[Auth] Manually refreshing permissions');
+      
+      // First ensure we have latest session
+      const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !currentSession) {
+        console.error('[Auth] Session error during refresh:', sessionError);
+        return null;
+      }
+      
+      // Check role directly from the database for most accurate result
+      const { data: roleData, error: roleError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', currentSession.user.id)
+        .single();
+      
+      if (roleError) {
+        if (roleError.code !== 'PGRST116') {
+          console.error('[Auth] Error fetching role during refresh:', roleError);
+        }
+        // No role found
+        setRoles(['user']);
+        setIsAdmin(false);
+        await fetchDirectPermissions('user');
+        return 'user';
+      }
+      
+      const userRole = roleData?.role || 'user';
+      const adminStatus = userRole === 'admin';
+      
+      console.log(`[Auth] Refreshed role: ${userRole}, isAdmin: ${adminStatus}`);
+      
+      // Update state with fetched values
+      setRoles([userRole]);
+      setIsAdmin(adminStatus);
+      
+      // Get updated permissions
+      await fetchDirectPermissions(userRole);
+      
+      return userRole;
+      
+    } catch (error) {
+      console.error('[Auth] Error refreshing permissions:', error);
+      return null;
     }
-    
-    await getUserRoleAndPermissions(session);
   };
 
   // Sign in with email and password
   const signIn = async (email: string, password: string, captchaToken: string | null = null) => {
     try {
-      console.log('[Auth] Attempting sign in');
+      console.log('[Auth] Attempting sign in for:', email);
       
       if (AUTH_API_URL && captchaToken) {
         // Use edge function for login with captcha
+        console.log('[Auth] Using edge function for login with captcha');
         const response = await fetch(AUTH_API_URL, {
           method: 'POST',
           headers: {
@@ -249,11 +364,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         const data = await response.json();
         
         if (!response.ok) {
+          console.error('[Auth] Edge function login error:', data.error);
           return { error: new Error(data.error || 'Failed to sign in') };
         }
 
         // Set the session in Supabase
         if (data.session) {
+          console.log('[Auth] Setting session from edge function response');
           await supabase.auth.setSession({
             access_token: data.session.access_token,
             refresh_token: data.session.refresh_token
@@ -265,16 +382,24 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         
       } else {
         // Fallback to direct Supabase auth
-        const { error } = await supabase.auth.signInWithPassword({
+        console.log('[Auth] Using direct Supabase auth');
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password
         });
 
         if (error) {
+          console.error('[Auth] Direct login error:', error.message);
           return { error };
         }
         
-        // The auth state change will trigger role fetching
+        console.log('[Auth] Login successful, user ID:', data.user?.id);
+        
+        // Explicitly fetch roles and permissions now for immediate access
+        if (data.session) {
+          await getUserRoleAndPermissions(data.session);
+        }
+        
         return {};
       }
       
@@ -386,11 +511,19 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
  * }
  * 
  * @example
- * // Advanced permission checking
- * const { hasAnyPermission } = useAuth();
- * if (hasAnyPermission(['edit_listing', 'admin.listings'])) {
- *   // Show edit button
+ * // Admin detection
+ * const { isAdmin, refreshPermissions } = useAuth();
+ * if (isAdmin) {
+ *   // Show admin features
  * }
+ * 
+ * @example
+ * // Refreshing permissions after changes
+ * const { refreshPermissions } = useAuth();
+ * const handlePromoteToAdmin = async (userId) => {
+ *   await promoteUser(userId);
+ *   await refreshPermissions(); // Update UI with new permissions
+ * };
  */
 export const useAuth = () => {
   const context = useContext(AuthContext);
