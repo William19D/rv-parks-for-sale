@@ -20,10 +20,12 @@ import AuthenticationSuccess from "./pages/AuthenticationSuccess";
 import AuthCallback from "./pages/AuthCallback";
 import EmailVerification from "./pages/EmailVerification";
 import ListingEdit from "./pages/ListingEdit";
+import UserProfile from "./pages/UserProfile";
+import Support from "./pages/Support"; // Add this import
 
 // Admin Pages
 import AdminDashboard from "./pages/admin/Dashboard";
-import AdminListings from "./pages/admin/Listings";
+import SupportTickets from "./pages/admin/SupportTickets"; // Add this import
 
 // Components
 import { useAuth, AuthProvider } from "@/hooks/useAuth";
@@ -214,25 +216,26 @@ const AppRoutes = () => {
         } />
         <Route path="/listings" element={<Listings />} />
         <Route path="/listings/:id" element={<ListingDetail />} />
+        <Route path="/support" element={<Support />} />
         
-        {/* Admin routes - protected by AdminRoute */}
+        {/* User Profile route */}
+        <Route path="/profile" element={
+          user ? <UserProfile /> : <Navigate to="/login" state={{ from: location }} replace />
+        } />
+        
+        {/* Admin routes - reduced to only Dashboard and Support Tickets */}
         <Route path="/admin/dashboard" element={
           <AdminRoute>
             <AdminDashboard />
           </AdminRoute>
         } />
-        <Route path="/admin/listings" element={
+        <Route path="/admin/support" element={
           <AdminRoute>
-            <AdminListings />
-          </AdminRoute>
-        } />
-        <Route path="/admin/listings/:id/edit" element={
-          <AdminRoute>
-            {ListingEdit ? <ListingEdit /> : <div>Loading editor...</div>}
+            <SupportTickets />
           </AdminRoute>
         } />
         
-        {/* Protected routes - require authentication */}
+        {/* Protected routes */}
         <Route path="/broker/dashboard" element={
           user ? <BrokerDashboard /> : <Navigate to="/login" state={{ from: location }} replace />
         } />

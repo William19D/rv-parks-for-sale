@@ -19,6 +19,7 @@ interface AuthContextType {
   hasAnyPermission: (permissions: Permission[]) => boolean;
   hasAllPermissions: (permissions: Permission[]) => boolean;
   refreshPermissions: () => Promise<Role | null>;
+  updateUserProfile: (metadata: Record<string, any>) => Promise<{ success?: boolean }>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -496,6 +497,36 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
+  // Function to update user profile information
+  const updateUserProfile = async (metadata: Record<string, any>) => {
+    if (!user) throw new Error("No authenticated user");
+    
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: metadata
+      });
+      
+      if (error) throw error;
+      
+      // Update current user state with the new metadata
+      setUser(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          user_metadata: {
+            ...prev.user_metadata,
+            ...metadata
+          }
+        };
+      });
+      
+      return { success: true };
+    } catch (error) {
+      console.error("Error updating user profile:", error);
+      throw error;
+    }
+  };
+
   // Check if the user has a specific permission
   const hasPermission = (permission: Permission) => {
     if (!user) return false;
@@ -539,7 +570,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     hasPermission,
     hasAnyPermission,
     hasAllPermissions,
-    refreshPermissions
+    refreshPermissions,
+    updateUserProfile, // Add this to the context value
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

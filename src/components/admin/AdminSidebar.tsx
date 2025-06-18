@@ -1,113 +1,89 @@
-import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import {
+import { Link, useLocation } from "react-router-dom";
+import { cn } from "@/lib/utils";
+import { 
   LayoutDashboard, 
-  List, 
-  Users, 
-  Settings, 
-  BarChart, 
-  MessageSquare,
-  PanelLeft,
-  PanelRight
-} from 'lucide-react';
+  MessageSquare
+} from "lucide-react";
 
-export function AdminSidebar() {
+interface AdminSidebarProps {
+  collapsed?: boolean;
+}
+
+// Define admin navigation items - reduced to only Dashboard and Support Tickets
+const adminNavItems = [
+  {
+    title: "Dashboard",
+    href: "/admin/dashboard/",
+    icon: LayoutDashboard,
+  },
+  {
+    title: "Support Tickets",
+    href: "/admin/support/",
+    icon: MessageSquare,
+  }
+];
+
+export function AdminSidebar({ collapsed = false }: AdminSidebarProps) {
   const location = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
-
-  const isActive = (path: string) => {
-    return location.pathname.startsWith(path);
-  };
-
-  const menuItems = [
-    {
-      title: 'Dashboard',
-      icon: LayoutDashboard,
-      href: '/admin/dashboard',
-      active: isActive('/admin/dashboard')
-    },
-    {
-      title: 'Listings',
-      icon: List,
-      href: '/admin/listings',
-      active: isActive('/admin/listings')
-    },
-    {
-      title: 'Users',
-      icon: Users,
-      href: '/admin/users',
-      active: isActive('/admin/users')
-    },
-    {
-      title: 'Analytics',
-      icon: BarChart,
-      href: '/admin/analytics',
-      active: isActive('/admin/analytics')
-    },
-    {
-      title: 'Messages',
-      icon: MessageSquare,
-      href: '/admin/messages',
-      active: isActive('/admin/messages')
-    },
-    {
-      title: 'Settings',
-      icon: Settings,
-      href: '/admin/settings',
-      active: isActive('/admin/settings')
-    }
-  ];
-
+  
   return (
-    <div 
-      className={cn(
-        "h-screen bg-white border-r transition-all duration-300 ease-in-out hidden md:block",
-        collapsed ? "w-16" : "w-64"
-      )}
-    >
-      <div className="p-4 flex items-center justify-between">
-        {!collapsed && (
-          <div className="font-bold text-xl text-[#f74f4f]">Admin Panel</div>
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setCollapsed(!collapsed)}
-          className={cn(
-            "rounded-full p-2 h-8 w-8",
-            collapsed && "mx-auto"
-          )}
-        >
-          {collapsed ? <PanelRight size={16} /> : <PanelLeft size={16} />}
-        </Button>
-      </div>
-      
-      <div className="mt-4 px-2">
-        {menuItems.map((item) => (
-          <Link
-            key={item.href}
-            to={item.href}
-            className={cn(
-              "flex items-center py-2 px-3 my-1 rounded-md transition-colors",
-              item.active
-                ? "bg-[#f74f4f]/10 text-[#f74f4f]"
-                : "text-gray-700 hover:bg-gray-100",
-              collapsed && "justify-center"
+    <aside className={cn(
+      "h-screen fixed top-0 left-0 z-40 bg-white border-r border-gray-200 transition-all",
+      collapsed ? "w-16" : "w-64"
+    )}>
+      <div className="h-full flex flex-col justify-between py-4">
+        <div>
+          <div className="flex items-center justify-center h-16 mb-6">
+            {collapsed ? (
+              <div className="h-8 w-8 bg-[#f74f4f] rounded-md flex items-center justify-center">
+                <span className="text-white font-bold text-sm">RP</span>
+              </div>
+            ) : (
+              <h1 className="text-xl font-bold text-[#f74f4f]">RoverPass Admin</h1>
             )}
-          >
-            <item.icon
-              className={cn(
-                "h-5 w-5",
-                item.active ? "text-[#f74f4f]" : "text-gray-500"
-              )}
-            />
-            {!collapsed && <span className="ml-3">{item.title}</span>}
-          </Link>
-        ))}
+          </div>
+          
+          <div className="px-3">
+            <ul className="space-y-2">
+              {adminNavItems.map((item) => {
+                const isActive = location.pathname === item.href || 
+                                location.pathname.startsWith(item.href);
+                                
+                return (
+                  <li key={item.href}>
+                    <Link
+                      to={item.href}
+                      className={cn(
+                        "flex items-center py-2 px-3 rounded-md group transition-colors",
+                        isActive 
+                          ? "bg-[#f74f4f]/10 text-[#f74f4f]" 
+                          : "hover:bg-gray-100"
+                      )}
+                    >
+                      <item.icon className={cn(
+                        "flex-shrink-0 w-5 h-5 transition-colors",
+                        isActive 
+                          ? "text-[#f74f4f]" 
+                          : "text-gray-500 group-hover:text-[#f74f4f]"
+                      )} />
+                      
+                      {!collapsed && (
+                        <span className={cn(
+                          "ml-3 transition-colors flex-1",
+                          isActive ? "font-medium" : ""
+                        )}>
+                          {item.title}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
       </div>
-    </div>
+    </aside>
   );
 }
 

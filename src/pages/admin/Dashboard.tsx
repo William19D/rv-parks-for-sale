@@ -54,6 +54,10 @@ import {
   CheckCheck,
   XIcon
 } from 'lucide-react';
+import { AdminLayout } from '@/components/admin/AdminLayout';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { format } from 'date-fns';
+import { DateRangePicker } from "@/components/ui/date-range-picker";
 
 // Status type for listings
 type ListingStatus = 'pending' | 'approved' | 'rejected' | 'all';
@@ -111,6 +115,7 @@ const AdminDashboard = () => {
   const [newStatus, setNewStatus] = useState<string>('');
   const [rejectionReason, setRejectionReason] = useState('');
   const [selectedReasonIndex, setSelectedReasonIndex] = useState<number | null>(null);
+  const [filterDate, setFilterDate] = useState<Date | undefined>(undefined);
   
   // Fetch state management
   const [retryCount, setRetryCount] = useState(0);
@@ -699,468 +704,470 @@ const AdminDashboard = () => {
   };
 
   return (
-    <div className="flex-1 p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Admin Dashboard</h1>
-        <div className="flex gap-2">
-          <Button 
-            variant="outline"
-            onClick={() => {
-              console.log('🔄 Refresh button clicked');
-              fetchAllListings();
-            }}
-            disabled={isLoading}
-            className="flex items-center gap-1"
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            {isLoading ? 'Loading...' : 'Refresh Data'}
-          </Button>
-          <Button 
-            onClick={() => {
-              console.log('➕ Add new listing button clicked');
-              navigate('/admin/listings/new');
-            }}
-            className="bg-[#f74f4f] hover:bg-[#e43c3c]"
-          >
-            Add New Listing
-          </Button>
-        </div>
-      </div>
-
-      {/* Dashboard Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow p-4">
-          <h3 className="text-gray-500 text-sm mb-1">Total Listings</h3>
-          <div className="flex justify-between items-center">
-            <span className="text-2xl font-bold">{statusCounts.all}</span>
-            <Badge className="bg-gray-100 text-gray-800">All</Badge>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow p-4">
-          <h3 className="text-gray-500 text-sm mb-1">Pending Review</h3>
-          <div className="flex justify-between items-center">
-            <span className="text-2xl font-bold">{statusCounts.pending}</span>
-            <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow p-4">
-          <h3 className="text-gray-500 text-sm mb-1">Approved</h3>
-          <div className="flex justify-between items-center">
-            <span className="text-2xl font-bold">{statusCounts.approved}</span>
-            <Badge className="bg-green-100 text-green-800">Approved</Badge>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow p-4">
-          <h3 className="text-gray-500 text-sm mb-1">Rejected</h3>
-          <div className="flex justify-between items-center">
-            <span className="text-2xl font-bold">{statusCounts.rejected}</span>
-            <Badge className="bg-red-100 text-red-800">Rejected</Badge>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg shadow p-6">
-        {/* Tabs and Search Bar */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-          <Tabs 
-            defaultValue="all" 
-            value={activeTab}
-            onValueChange={handleTabChange}
-            className="w-full md:w-auto"
-          >
-            <TabsList>
-              <TabsTrigger value="all" className="text-sm">
-                All Listings
-                <Badge className="ml-2 bg-gray-100 text-gray-800 hover:bg-gray-100">
-                  {statusCounts.all}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="pending" className="text-sm">
-                Pending 
-                <Badge className="ml-2 bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
-                  {statusCounts.pending}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="approved" className="text-sm">
-                Approved
-                <Badge className="ml-2 bg-green-100 text-green-800 hover:bg-green-100">
-                  {statusCounts.approved}
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="rejected" className="text-sm">
-                Rejected
-                <Badge className="ml-2 bg-red-100 text-red-800 hover:bg-red-100">
-                  {statusCounts.rejected}
-                </Badge>
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-          
-          <div className="relative w-full md:w-64">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
-            <Input
-              placeholder="Search listings..."
-              className="pl-9 bg-gray-50"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-        </div>
-        
-        {/* Loading State */}
-        {isLoading && (
-          <div className="py-10 flex flex-col items-center justify-center">
-            <Loader2 className="h-12 w-12 text-[#f74f4f] animate-spin mb-4" />
-            <p className="text-gray-500 font-medium">
-              Loading listings{retryCount > 0 ? ` (Attempt ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})` : ''}...
-            </p>
-            <p className="text-gray-400 text-sm mt-1">
-              This may take a few moments
-            </p>
-          </div>
-        )}
-        
-        {/* Error State */}
-        {!isLoading && fetchError && (
-          <div className="py-10 flex flex-col items-center justify-center">
-            <div className="mb-4 p-4 rounded-full bg-red-50 text-red-600">
-              <DatabaseIcon className="h-12 w-12" />
-            </div>
-            <h3 className="text-lg font-medium text-red-800 mb-2">Connection Issue</h3>
-            <p className="text-gray-600 mb-5 text-center max-w-md">
-              {fetchError || "We couldn't load your listings data. This might be due to a connection issue."}
-            </p>
+    <AdminLayout>
+      <div className="flex-1 p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+          <div className="flex gap-2">
             <Button 
-              onClick={() => fetchAllListings()}
-              className="flex items-center bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
+              variant="outline"
+              onClick={() => {
+                console.log('🔄 Refresh button clicked');
+                fetchAllListings();
+              }}
+              disabled={isLoading}
+              className="flex items-center gap-1"
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Try Again
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              {isLoading ? 'Loading...' : 'Refresh Data'}
+            </Button>
+            <Button 
+              onClick={() => {
+                console.log('➕ Add new listing button clicked');
+                navigate('/admin/listings/new');
+              }}
+              className="bg-[#f74f4f] hover:bg-[#e43c3c]"
+            >
+              Add New Listing
             </Button>
           </div>
-        )}
-        
-        {/* Empty State */}
-        {!isLoading && !fetchError && dataLoaded && filteredListings.length === 0 && (
-          <div className="py-10 flex flex-col items-center justify-center">
-            <div className="mb-4 p-3 rounded-full bg-gray-100">
-              <Filter className="h-8 w-8 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium">No listings found</h3>
-            <p className="text-gray-500 mt-1">
-              {searchQuery ? 'Try adjusting your search.' : 'There are no listings in this category yet.'}
-            </p>
-          </div>
-        )}
-        
-        {/* Data Table */}
-        {!isLoading && !fetchError && filteredListings.length > 0 && (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Price</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Listed On</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredListings.map((listing) => (
-                  <TableRow key={listing.id}>
-                    <TableCell className="font-medium">{listing.title}</TableCell>
-                    <TableCell>{listing.city}, {listing.state}</TableCell>
-                    <TableCell>{formatCurrency(listing.price)}</TableCell>
-                    <TableCell>{listing.property_type}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={listing.status} />
-                      {listing.status === 'rejected' && listing.rejection_reason && (
-                        <div className="text-xs text-gray-600 mt-1 truncate max-w-[200px]" title={listing.rejection_reason}>
-                          Reason: {listing.rejection_reason}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell>{formatDate(listing.created_at)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end items-center space-x-2">
-                        {/* View button */}
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-8 w-8 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                          onClick={() => viewListing(listing)}
-                          title="View public listing"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        
-                        {/* Edit button */}
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-8 w-8 p-0 text-amber-600 hover:text-amber-800 hover:bg-amber-50"
-                          onClick={() => editListing(listing)}
-                          title="Edit listing details"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        
-                        {/* ADDED: Direct Approve/Reject buttons for pending listings */}
-                        {listing.status === 'pending' && (
-                          <>
-                            {/* Approve button */}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 text-green-600 hover:text-green-800 hover:bg-green-50"
-                              onClick={() => {
-                                console.log(`✅ Direct approve button clicked for listing: ${listing.id}`);
-                                openStatusDialog(listing, 'approved');
-                              }}
-                              title="Approve listing"
-                              data-testid={`approve-listing-${listing.id}`}
-                            >
-                              <CheckCheck className="h-4 w-4" />
-                            </Button>
-                            
-                            {/* Direct Reject button */}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0 text-red-600 hover:text-red-800 hover:bg-red-50"
-                              onClick={() => handleRejectClick(listing)}
-                              title="Reject listing"
-                            >
-                              <XIcon className="h-4 w-4" />
-                            </Button>
-                          </>
-                        )}
+        </div>
 
-                        {/* More options dropdown */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="h-8 w-8 p-0 hover:bg-gray-100"
-                              title="More actions"
-                            >
-                              <Settings className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {/* Status change options */}
-                            {listing.status !== 'approved' && (
-                              <DropdownMenuItem onClick={() => {
-                                console.log(`✅ Approve option selected from dropdown for listing: ${listing.id}`);
-                                openStatusDialog(listing, 'approved');
-                              }}>
-                                <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
-                                <span>Approve</span>
-                              </DropdownMenuItem>
-                            )}
-                            
-                            {listing.status !== 'rejected' && (
-                              <DropdownMenuItem onClick={() => handleRejectClick(listing)}>
-                                <XCircle className="mr-2 h-4 w-4 text-red-600" />
-                                <span>Reject</span>
-                              </DropdownMenuItem>
-                            )}
-                            
-                            {listing.status !== 'pending' && (
-                              <DropdownMenuItem onClick={() => openStatusDialog(listing, 'pending')}>
-                                <Clock className="mr-2 h-4 w-4 text-yellow-600" />
-                                <span>Mark as Pending</span>
-                              </DropdownMenuItem>
-                            )}
-                            
-                            {/* Delete option */}
-                            <DropdownMenuItem 
-                              onClick={() => openDeleteDialog(listing)}
-                              className="text-red-600"
-                            >
-                              <Trash className="mr-2 h-4 w-4" />
-                              <span>Delete</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </div>
-
-      {/* Status Change Dialog */}
-      <AlertDialog 
-        open={isStatusDialogOpen} 
-        onOpenChange={(open) => {
-          console.log(`🪟 Status dialog ${open ? 'opened' : 'closing'}`);
-          setIsStatusDialogOpen(open);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Update Listing Status</AlertDialogTitle>
-            <AlertDialogDescription>
-              {newStatus === 'approved' && "This listing will be visible to all users after approval."}
-              {newStatus === 'pending' && "This listing will be marked as pending review."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="py-2">
-            <div className="text-sm bg-blue-50 p-3 rounded-md border border-blue-100 mb-1">
-              <p><strong>Debug Info:</strong></p>
-              <p>Selected listing ID: {selectedListing?.id || 'None'}</p>
-              <p>New status: {newStatus || 'None'}</p>
-              <p>Dialog open state: {isStatusDialogOpen ? 'Open' : 'Closed'}</p>
+        {/* Dashboard Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="bg-white rounded-lg shadow p-4">
+            <h3 className="text-gray-500 text-sm mb-1">Total Listings</h3>
+            <div className="flex justify-between items-center">
+              <span className="text-2xl font-bold">{statusCounts.all}</span>
+              <Badge className="bg-gray-100 text-gray-800">All</Badge>
             </div>
           </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              console.log('❌ Status change canceled');
-            }}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={() => {
-                console.log('✅ Status change confirmed - calling updateListingStatus()');
-                updateListingStatus();
-              }}
-              className={
-                newStatus === 'approved' ? 'bg-green-600 hover:bg-green-700' :
-                'bg-yellow-600 hover:bg-yellow-700'
-              }
-              data-testid="confirm-status-change"
-            >
-              Confirm
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* IMPROVED: Rejection Dialog with Reason Selection */}
-      <AlertDialog 
-        open={isRejectDialogOpen} 
-        onOpenChange={(open) => {
-          console.log(`🪟 Reject dialog ${open ? 'opened' : 'closing'}`);
-          setIsRejectDialogOpen(open);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reject Listing</AlertDialogTitle>
-            <AlertDialogDescription>
-              Please provide a reason for rejecting this listing. This information will be visible to the broker.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
           
-          <div className="space-y-4 py-4">
-            {/* Quick selection reasons */}
-            <div className="space-y-2">
-              <Label className="text-sm text-gray-500">Common Rejection Reasons:</Label>
-              <div className="flex flex-wrap gap-2">
-                {REJECTION_REASONS.map((reason, index) => (
-                  <Badge 
-                    key={index}
-                    variant="outline"
-                    className={`cursor-pointer ${
-                      selectedReasonIndex === index 
-                        ? 'bg-red-50 border-red-200 text-red-800' 
-                        : 'hover:bg-gray-100'
-                    }`}
-                    onClick={() => selectReason(index)}
-                  >
-                    {reason}
-                  </Badge>
-                ))}
-              </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <h3 className="text-gray-500 text-sm mb-1">Pending Review</h3>
+            <div className="flex justify-between items-center">
+              <span className="text-2xl font-bold">{statusCounts.pending}</span>
+              <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="rejection-reason">Rejection Reason</Label>
-              <Textarea 
-                id="rejection-reason"
-                placeholder="Explain why this listing is being rejected..."
-                value={rejectionReason}
-                onChange={(e) => {
-                  console.log(`📝 Rejection reason updated: "${e.target.value}"`);
-                  setRejectionReason(e.target.value);
-                  setSelectedReasonIndex(null);
-                }}
-                rows={4}
-                className="resize-none"
-                autoFocus
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-4">
+            <h3 className="text-gray-500 text-sm mb-1">Approved</h3>
+            <div className="flex justify-between items-center">
+              <span className="text-2xl font-bold">{statusCounts.approved}</span>
+              <Badge className="bg-green-100 text-green-800">Approved</Badge>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow p-4">
+            <h3 className="text-gray-500 text-sm mb-1">Rejected</h3>
+            <div className="flex justify-between items-center">
+              <span className="text-2xl font-bold">{statusCounts.rejected}</span>
+              <Badge className="bg-red-100 text-red-800">Rejected</Badge>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6">
+          {/* Tabs and Search Bar */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+            <Tabs 
+              defaultValue="all" 
+              value={activeTab}
+              onValueChange={handleTabChange}
+              className="w-full md:w-auto"
+            >
+              <TabsList>
+                <TabsTrigger value="all" className="text-sm">
+                  All Listings
+                  <Badge className="ml-2 bg-gray-100 text-gray-800 hover:bg-gray-100">
+                    {statusCounts.all}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="pending" className="text-sm">
+                  Pending 
+                  <Badge className="ml-2 bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
+                    {statusCounts.pending}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="approved" className="text-sm">
+                  Approved
+                  <Badge className="ml-2 bg-green-100 text-green-800 hover:bg-green-100">
+                    {statusCounts.approved}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="rejected" className="text-sm">
+                  Rejected
+                  <Badge className="ml-2 bg-red-100 text-red-800 hover:bg-red-100">
+                    {statusCounts.rejected}
+                  </Badge>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+            
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+              <Input
+                placeholder="Search listings..."
+                className="pl-9 bg-gray-50"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <div className="text-sm bg-blue-50 p-3 rounded-md border border-blue-100">
-              <p><strong>Debug Info:</strong></p>
-              <p>Selected listing ID: {selectedListing?.id || 'None'}</p>
-              <p>Current reason: {rejectionReason || 'None'}</p>
-              <p>Selected reason index: {selectedReasonIndex !== null ? selectedReasonIndex : 'None'}</p>
-            </div>
           </div>
           
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              console.log('❌ Rejection canceled');
-            }}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={() => {
-                console.log('⛔ Rejection confirmed - calling handleReject()');
-                handleReject();
-              }}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Reject Listing
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          {/* Loading State */}
+          {isLoading && (
+            <div className="py-10 flex flex-col items-center justify-center">
+              <Loader2 className="h-12 w-12 text-[#f74f4f] animate-spin mb-4" />
+              <p className="text-gray-500 font-medium">
+                Loading listings{retryCount > 0 ? ` (Attempt ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})` : ''}...
+              </p>
+              <p className="text-gray-400 text-sm mt-1">
+                This may take a few moments
+              </p>
+            </div>
+          )}
+          
+          {/* Error State */}
+          {!isLoading && fetchError && (
+            <div className="py-10 flex flex-col items-center justify-center">
+              <div className="mb-4 p-4 rounded-full bg-red-50 text-red-600">
+                <DatabaseIcon className="h-12 w-12" />
+              </div>
+              <h3 className="text-lg font-medium text-red-800 mb-2">Connection Issue</h3>
+              <p className="text-gray-600 mb-5 text-center max-w-md">
+                {fetchError || "We couldn't load your listings data. This might be due to a connection issue."}
+              </p>
+              <Button 
+                onClick={() => fetchAllListings()}
+                className="flex items-center bg-[#f74f4f] hover:bg-[#e43c3c] text-white"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Try Again
+              </Button>
+            </div>
+          )}
+          
+          {/* Empty State */}
+          {!isLoading && !fetchError && dataLoaded && filteredListings.length === 0 && (
+            <div className="py-10 flex flex-col items-center justify-center">
+              <div className="mb-4 p-3 rounded-full bg-gray-100">
+                <Filter className="h-8 w-8 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-medium">No listings found</h3>
+              <p className="text-gray-500 mt-1">
+                {searchQuery ? 'Try adjusting your search.' : 'There are no listings in this category yet.'}
+              </p>
+            </div>
+          )}
+          
+          {/* Data Table */}
+          {!isLoading && !fetchError && filteredListings.length > 0 && (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Title</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Price</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Listed On</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredListings.map((listing) => (
+                    <TableRow key={listing.id}>
+                      <TableCell className="font-medium">{listing.title}</TableCell>
+                      <TableCell>{listing.city}, {listing.state}</TableCell>
+                      <TableCell>{formatCurrency(listing.price)}</TableCell>
+                      <TableCell>{listing.property_type}</TableCell>
+                      <TableCell>
+                        <StatusBadge status={listing.status} />
+                        {listing.status === 'rejected' && listing.rejection_reason && (
+                          <div className="text-xs text-gray-600 mt-1 truncate max-w-[200px]" title={listing.rejection_reason}>
+                            Reason: {listing.rejection_reason}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>{formatDate(listing.created_at)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end items-center space-x-2">
+                          {/* View button */}
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-8 w-8 p-0 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                            onClick={() => viewListing(listing)}
+                            title="View public listing"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          
+                          {/* Edit button */}
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-8 w-8 p-0 text-amber-600 hover:text-amber-800 hover:bg-amber-50"
+                            onClick={() => editListing(listing)}
+                            title="Edit listing details"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          
+                          {/* ADDED: Direct Approve/Reject buttons for pending listings */}
+                          {listing.status === 'pending' && (
+                            <>
+                              {/* Approve button */}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-green-600 hover:text-green-800 hover:bg-green-50"
+                                onClick={() => {
+                                  console.log(`✅ Direct approve button clicked for listing: ${listing.id}`);
+                                  openStatusDialog(listing, 'approved');
+                                }}
+                                title="Approve listing"
+                                data-testid={`approve-listing-${listing.id}`}
+                              >
+                                <CheckCheck className="h-4 w-4" />
+                              </Button>
+                              
+                              {/* Direct Reject button */}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-red-600 hover:text-red-800 hover:bg-red-50"
+                                onClick={() => handleRejectClick(listing)}
+                                title="Reject listing"
+                              >
+                                <XIcon className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog 
-        open={isDeleteDialogOpen} 
-        onOpenChange={(open) => {
-          console.log(`🪟 Delete dialog ${open ? 'opened' : 'closing'}`);
-          setIsDeleteDialogOpen(open);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Listing</AlertDialogTitle>
-            <AlertDialogDescription>
-              This action cannot be undone. This will permanently delete the listing
-              "{selectedListing?.title}" and remove all associated data.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="text-sm bg-blue-50 p-3 rounded-md border border-blue-100 my-2">
-            <p><strong>Debug Info:</strong></p>
-            <p>Selected listing ID: {selectedListing?.id || 'None'}</p>
-            <p>Selected listing title: {selectedListing?.title || 'None'}</p>
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              console.log('❌ Delete canceled');
-            }}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={() => {
-                console.log('🗑️ Delete confirmed - calling deleteListing()');
-                deleteListing();
-              }}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+                          {/* More options dropdown */}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-8 w-8 p-0 hover:bg-gray-100"
+                                title="More actions"
+                              >
+                                <Settings className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {/* Status change options */}
+                              {listing.status !== 'approved' && (
+                                <DropdownMenuItem onClick={() => {
+                                  console.log(`✅ Approve option selected from dropdown for listing: ${listing.id}`);
+                                  openStatusDialog(listing, 'approved');
+                                }}>
+                                  <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
+                                  <span>Approve</span>
+                                </DropdownMenuItem>
+                              )}
+                              
+                              {listing.status !== 'rejected' && (
+                                <DropdownMenuItem onClick={() => handleRejectClick(listing)}>
+                                  <XCircle className="mr-2 h-4 w-4 text-red-600" />
+                                  <span>Reject</span>
+                                </DropdownMenuItem>
+                              )}
+                              
+                              {listing.status !== 'pending' && (
+                                <DropdownMenuItem onClick={() => openStatusDialog(listing, 'pending')}>
+                                  <Clock className="mr-2 h-4 w-4 text-yellow-600" />
+                                  <span>Mark as Pending</span>
+                                </DropdownMenuItem>
+                              )}
+                              
+                              {/* Delete option */}
+                              <DropdownMenuItem 
+                                onClick={() => openDeleteDialog(listing)}
+                                className="text-red-600"
+                              >
+                                <Trash className="mr-2 h-4 w-4" />
+                                <span>Delete</span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+
+        {/* Status Change Dialog */}
+        <AlertDialog 
+          open={isStatusDialogOpen} 
+          onOpenChange={(open) => {
+            console.log(`🪟 Status dialog ${open ? 'opened' : 'closing'}`);
+            setIsStatusDialogOpen(open);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Update Listing Status</AlertDialogTitle>
+              <AlertDialogDescription>
+                {newStatus === 'approved' && "This listing will be visible to all users after approval."}
+                {newStatus === 'pending' && "This listing will be marked as pending review."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="py-2">
+              <div className="text-sm bg-blue-50 p-3 rounded-md border border-blue-100 mb-1">
+                <p><strong>Debug Info:</strong></p>
+                <p>Selected listing ID: {selectedListing?.id || 'None'}</p>
+                <p>New status: {newStatus || 'None'}</p>
+                <p>Dialog open state: {isStatusDialogOpen ? 'Open' : 'Closed'}</p>
+              </div>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => {
+                console.log('❌ Status change canceled');
+              }}>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={() => {
+                  console.log('✅ Status change confirmed - calling updateListingStatus()');
+                  updateListingStatus();
+                }}
+                className={
+                  newStatus === 'approved' ? 'bg-green-600 hover:bg-green-700' :
+                  'bg-yellow-600 hover:bg-yellow-700'
+                }
+                data-testid="confirm-status-change"
+              >
+                Confirm
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* IMPROVED: Rejection Dialog with Reason Selection */}
+        <AlertDialog 
+          open={isRejectDialogOpen} 
+          onOpenChange={(open) => {
+            console.log(`🪟 Reject dialog ${open ? 'opened' : 'closing'}`);
+            setIsRejectDialogOpen(open);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Reject Listing</AlertDialogTitle>
+              <AlertDialogDescription>
+                Please provide a reason for rejecting this listing. This information will be visible to the broker.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            
+            <div className="space-y-4 py-4">
+              {/* Quick selection reasons */}
+              <div className="space-y-2">
+                <Label className="text-sm text-gray-500">Common Rejection Reasons:</Label>
+                <div className="flex flex-wrap gap-2">
+                  {REJECTION_REASONS.map((reason, index) => (
+                    <Badge 
+                      key={index}
+                      variant="outline"
+                      className={`cursor-pointer ${
+                        selectedReasonIndex === index 
+                          ? 'bg-red-50 border-red-200 text-red-800' 
+                          : 'hover:bg-gray-100'
+                      }`}
+                      onClick={() => selectReason(index)}
+                    >
+                      {reason}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="rejection-reason">Rejection Reason</Label>
+                <Textarea 
+                  id="rejection-reason"
+                  placeholder="Explain why this listing is being rejected..."
+                  value={rejectionReason}
+                  onChange={(e) => {
+                    console.log(`📝 Rejection reason updated: "${e.target.value}"`);
+                    setRejectionReason(e.target.value);
+                    setSelectedReasonIndex(null);
+                  }}
+                  rows={4}
+                  className="resize-none"
+                  autoFocus
+                />
+              </div>
+              <div className="text-sm bg-blue-50 p-3 rounded-md border border-blue-100">
+                <p><strong>Debug Info:</strong></p>
+                <p>Selected listing ID: {selectedListing?.id || 'None'}</p>
+                <p>Current reason: {rejectionReason || 'None'}</p>
+                <p>Selected reason index: {selectedReasonIndex !== null ? selectedReasonIndex : 'None'}</p>
+              </div>
+            </div>
+            
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => {
+                console.log('❌ Rejection canceled');
+              }}>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={() => {
+                  console.log('⛔ Rejection confirmed - calling handleReject()');
+                  handleReject();
+                }}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Reject Listing
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog 
+          open={isDeleteDialogOpen} 
+          onOpenChange={(open) => {
+            console.log(`🪟 Delete dialog ${open ? 'opened' : 'closing'}`);
+            setIsDeleteDialogOpen(open);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Listing</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the listing
+                "{selectedListing?.title}" and remove all associated data.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="text-sm bg-blue-50 p-3 rounded-md border border-blue-100 my-2">
+              <p><strong>Debug Info:</strong></p>
+              <p>Selected listing ID: {selectedListing?.id || 'None'}</p>
+              <p>Selected listing title: {selectedListing?.title || 'None'}</p>
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => {
+                console.log('❌ Delete canceled');
+              }}>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={() => {
+                  console.log('🗑️ Delete confirmed - calling deleteListing()');
+                  deleteListing();
+                }}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </AdminLayout>
   );
 };
 

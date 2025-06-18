@@ -8,11 +8,23 @@ import {
   User,
   LogOut,
   PlusCircle,
-  LucideIcon
+  LucideIcon,
+  Settings,
+  ChevronDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 // Importar el logo directamente usando el alias @
 import logoImage from "@/assets/logo.svg";
@@ -228,6 +240,44 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
     return user.email?.split('@')[0] || "";
   }, [user]);
   
+  // Get user profile image URL or placeholder
+  const profileImage = useMemo(() => {
+    if (!user) return "";
+    return user.user_metadata?.profile_image_url || "";
+  }, [user]);
+  
+  // Get user initials for avatar fallback
+  const userInitials = useMemo(() => {
+    if (!user) return "";
+    
+    // Try from metadata
+    const firstName = user.user_metadata?.first_name;
+    const lastName = user.user_metadata?.last_name;
+    
+    if (firstName && lastName) {
+      return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+    }
+    
+    if (firstName) {
+      return firstName.charAt(0).toUpperCase();
+    }
+    
+    // Try from localStorage
+    const storedFirstName = localStorage.getItem('userFirstName');
+    const storedLastName = localStorage.getItem('userLastName');
+    
+    if (storedFirstName && storedLastName) {
+      return `${storedFirstName.charAt(0)}${storedLastName.charAt(0)}`.toUpperCase();
+    }
+    
+    if (storedFirstName) {
+      return storedFirstName.charAt(0).toUpperCase();
+    }
+    
+    // Fall back to email
+    return user.email?.charAt(0).toUpperCase() || "U";
+  }, [user]);
+  
   const handleSignOut = async () => {
     window.scrollTo({
       top: 0,
@@ -258,10 +308,23 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
           <div className="space-y-2">
             <div className="text-sm text-gray-600 px-3 py-2">
               <div className="flex items-center space-x-2">
-                <User className="h-4 w-4" />
-                <span>Hello, <span className="font-medium">{userName || user.email?.split('@')[0]}</span></span>
+                <div className="flex items-center">
+                  <Avatar className="h-8 w-8 mr-2">
+                    <AvatarImage src={profileImage} alt={userName} />
+                    <AvatarFallback className="bg-[#f74f4f]/10 text-[#f74f4f]">{userInitials}</AvatarFallback>
+                  </Avatar>
+                  <span>Hello, <span className="font-medium">{userName || user.email?.split('@')[0]}</span></span>
+                </div>
               </div>
             </div>
+            <a 
+              href="/profile/" 
+              onClick={(e) => handleNavigation(e, "/profile")}
+              className="flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md"
+            >
+              <User className="h-4 w-4 mr-2" />
+              My Profile
+            </a>
             <Button 
               variant="outline" 
               className="w-full"
@@ -272,22 +335,54 @@ const AuthSection = memo(({ user, loading, signOut, isMobile, setMenuOpen }: {
             </Button>
           </div>
         ) : (
-          <div className="flex items-center space-x-2">
-            <div className="flex items-center bg-gray-100 rounded-full p-2">
-              <User className="h-4 w-4 text-gray-600 mr-2" />
-              <span className="text-sm font-medium text-gray-700">
-                {userName || user.email?.split('@')[0]}
-              </span>
-            </div>
-            <Button 
-              variant="ghost"
-              size="sm"
-              onClick={handleSignOut}
-              className="text-gray-600 hover:text-[#f74f4f]"
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="flex items-center gap-2 hover:bg-gray-100 px-3">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={profileImage} alt={userName} />
+                  <AvatarFallback className="bg-[#f74f4f]/10 text-[#f74f4f]">{userInitials}</AvatarFallback>
+                </Avatar>
+                <span className="text-sm font-medium text-gray-700 max-w-[120px] truncate">
+                  {userName || user.email?.split('@')[0]}
+                </span>
+                <ChevronDown className="h-4 w-4 text-gray-500" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56" sideOffset={8}>
+              <DropdownMenuLabel>My Account</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigate("/profile/");
+                  }}
+                  className="cursor-pointer"
+                >
+                  <User className="h-4 w-4 mr-2" />
+                  <span>Profile</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigate("/broker/dashboard/");
+                  }}
+                  className="cursor-pointer"
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  <span>Dashboard</span>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={handleSignOut}
+                className="cursor-pointer text-red-500 hover:text-red-600 focus:text-red-600"
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                <span>Sign out</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </>
     );
@@ -399,6 +494,12 @@ export const Header = memo(() => {
         path: "/listings",
         dropdown: null,
         exclude: ["/listings/new"], // Excluir la ruta de "Add Listing"
+        exact: false
+      },
+      {
+        name: "Support",
+        path: "/support",
+        dropdown: null,
         exact: false
       },
     ];
