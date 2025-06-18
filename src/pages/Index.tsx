@@ -29,7 +29,8 @@ const Index = () => {
       try {
         // Esta función ya está filtrando por status 'approved' en la API
         const approvedFeaturedListings = await getFeaturedListings();
-        setFeaturedListings(approvedFeaturedListings);
+        // Only take the last 3 listings
+        setFeaturedListings(approvedFeaturedListings.slice(0, 3));
       } catch (error) {
         // No mostramos detalles del error que podrían contener información sensible
         console.error("Error loading listings");
@@ -162,7 +163,7 @@ const Index = () => {
         <div className="container mx-auto px-4">
           <div className="flex justify-between items-center mb-8">
             <h2 className="text-3xl font-bold relative">
-              Featured Properties
+              Latest Properties
               <span className="absolute -bottom-2 left-0 h-1 w-20 bg-[#f74f4f] rounded-full"></span>
             </h2>
             <Button asChild variant="outline" className="border-[#f74f4f] text-[#f74f4f] hover:bg-[#f74f4f]/5 group">
@@ -177,12 +178,12 @@ const Index = () => {
             <div className="flex justify-center py-20">
               <div className="flex flex-col items-center">
                 <Loader2 className="h-12 w-12 text-[#f74f4f] animate-spin mb-4" />
-                <p className="text-gray-500 text-lg">Loading featured properties...</p>
+                <p className="text-gray-500 text-lg">Loading latest properties...</p>
               </div>
             </div>
           ) : featuredListings.length > 0 ? (
             <motion.div 
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+              className="grid grid-cols-1 md:grid-cols-3 gap-6"
               variants={containerVariants}
               initial="hidden"
               whileInView="visible"

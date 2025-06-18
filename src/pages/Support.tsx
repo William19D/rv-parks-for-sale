@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
@@ -20,10 +20,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Send, MessageSquare, Mail, HelpCircle, ChevronRight } from "lucide-react";
+import { Loader2, Send, HelpCircle, ChevronRight, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
+import HCaptcha from '@hcaptcha/react-hcaptcha';
+
+// Environment detection
+const IS_DEV = import.meta.env.DEV === true || window.location.hostname === 'localhost';
+
+// Get environment variables with fallbacks
+const HCAPTCHA_SITE_KEY = import.meta.env.VITE_HCAPTCHA_SITE_KEY || '';
 
 // Define topics for the dropdown
 const supportTopics = [
@@ -65,51 +72,70 @@ const Support = () => {
   const [topic, setTopic] = useState("");
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const captchaRef = useRef<HCaptcha | null>(null);
   
   // Expanded FAQ state
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+
+  // Check if hCaptcha site key is configured
+  useEffect(() => {
+    if (!HCAPTCHA_SITE_KEY) {
+      setFormError("Security verification is not properly configured. Please contact support.");
+    }
+  }, []);
+  
+  // Clear form error when inputs change
+  useEffect(() => {
+    if (formError) {
+      setFormError(null);
+    }
+  }, [email, name, topic, message, captchaToken, formError]);
   
   const toggleFaq = (index: number) => {
     setExpandedFaq(expandedFaq === index ? null : index);
   };
 
+  // Handle hCaptcha verification
+  const handleVerificationSuccess = (token: string) => {
+    setCaptchaToken(token);
+  };
+
+  const handleCaptchaError = () => {
+    setFormError("Captcha verification failed. Please try again.");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Clear previous errors
+    setFormError(null);
+
     // Validate form
     if (!name.trim()) {
-      toast({
-        title: "Name is required",
-        description: "Please enter your name",
-        variant: "destructive",
-      });
+      setFormError("Name is required");
       return;
     }
     
     if (!email.trim() || !email.includes('@')) {
-      toast({
-        title: "Valid email is required",
-        description: "Please enter a valid email address",
-        variant: "destructive",
-      });
+      setFormError("Valid email is required");
       return;
     }
     
     if (!topic) {
-      toast({
-        title: "Topic is required",
-        description: "Please select a topic for your message",
-        variant: "destructive",
-      });
+      setFormError("Topic is required");
       return;
     }
     
     if (!message.trim() || message.length < 10) {
-      toast({
-        title: "Message is too short",
-        description: "Please provide more details in your message (at least 10 characters)",
-        variant: "destructive",
-      });
+      setFormError("Please provide more details in your message (at least 10 characters)");
+      return;
+    }
+
+    // Validate captcha
+    if (!captchaToken) {
+      setFormError("Please complete the security verification");
       return;
     }
     
@@ -126,7 +152,8 @@ const Support = () => {
             topic,
             message,
             user_id: user?.id || null,
-            status: 'new'
+            status: 'new',
+            captcha_token: captchaToken // Include captcha token
           },
         ]);
       
@@ -145,6 +172,8 @@ const Support = () => {
       }
       setTopic("");
       setMessage("");
+      setCaptchaToken(null);
+      captchaRef.current?.resetCaptcha();
       
     } catch (error) {
       console.error('Error submitting support ticket:', error);
@@ -153,6 +182,10 @@ const Support = () => {
         description: "There was a problem sending your message. Please try again.",
         variant: "destructive",
       });
+      
+      // Reset captcha on error
+      captchaRef.current?.resetCaptcha();
+      setCaptchaToken(null);
     } finally {
       setIsSubmitting(false);
     }
@@ -166,229 +199,183 @@ const Support = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <div className="flex flex-col md:flex-row items-start gap-8">
-            {/* Main content area */}
-            <div className="flex-1">
-              <div className="mb-8">
-                <h1 className="text-3xl font-bold mb-2">Support Center</h1>
-                <p className="text-muted-foreground">
-                  Need help? Get in touch with our support team or browse common questions.
-                </p>
-              </div>
-              
-              <Card className="mb-8">
-                <CardHeader>
-                  <CardTitle>Contact Support</CardTitle>
-                  <CardDescription>
-                    Fill out the form below and we'll get back to you as soon as possible.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="name">Your Name</Label>
-                        <Input 
-                          id="name"
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          placeholder="Enter your name"
-                          disabled={isSubmitting || !!user}
-                        />
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label htmlFor="email">Email Address</Label>
-                        <Input 
-                          id="email"
-                          type="email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="your@email.com"
-                          disabled={isSubmitting || !!user}
-                        />
-                      </div>
-                    </div>
-                    
+          <div className="max-w-3xl mx-auto">
+            <div className="mb-8">
+              <h1 className="text-3xl font-bold mb-2">Support Center</h1>
+              <p className="text-muted-foreground">
+                Need help? Get in touch with our support team or browse common questions.
+              </p>
+            </div>
+            
+            <Card className="mb-8">
+              <CardHeader>
+                <CardTitle>Contact Support</CardTitle>
+                <CardDescription>
+                  Fill out the form below and we'll get back to you as soon as possible.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {formError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-start">
+                    <AlertCircle className="h-5 w-5 text-red-500 mr-2 mt-0.5" />
+                    <span className="text-red-800 text-sm">{formError}</span>
+                  </div>
+                )}
+                
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="topic">Topic</Label>
-                      <Select value={topic} onValueChange={setTopic} disabled={isSubmitting}>
-                        <SelectTrigger id="topic">
-                          <SelectValue placeholder="Select a topic" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {supportTopics.map((topic) => (
-                            <SelectItem key={topic.value} value={topic.value}>
-                              {topic.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label htmlFor="message">Your Message</Label>
-                      <Textarea 
-                        id="message"
-                        value={message}
-                        onChange={(e) => setMessage(e.target.value)}
-                        placeholder="Please describe your issue or question in detail"
-                        rows={6}
-                        disabled={isSubmitting}
+                      <Label htmlFor="name">Your Name</Label>
+                      <Input 
+                        id="name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="Enter your name"
+                        disabled={isSubmitting || !!user}
+                        className={!name.trim() && formError ? "border-red-300" : ""}
                       />
                     </div>
                     
-                    <div className="flex justify-end">
-                      <Button 
-                        type="submit" 
-                        disabled={isSubmitting}
-                        className="bg-[#f74f4f] hover:bg-[#e43c3c]"
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Sending...
-                          </>
-                        ) : (
-                          <>
-                            <Send className="mr-2 h-4 w-4" />
-                            Send Message
-                          </>
-                        )}
-                      </Button>
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email Address</Label>
+                      <Input 
+                        id="email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="your@email.com"
+                        disabled={isSubmitting || !!user}
+                        className={(!email.trim() || !email.includes('@')) && formError ? "border-red-300" : ""}
+                      />
                     </div>
-                  </form>
-                </CardContent>
-              </Card>
-              
-              {/* FAQ Section */}
-              <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-100">
-                <h2 className="text-xl font-semibold mb-4 flex items-center">
-                  <HelpCircle className="h-5 w-5 mr-2 text-[#f74f4f]" />
-                  Frequently Asked Questions
-                </h2>
-                
-                <div className="space-y-3">
-                  {faqs.map((faq, index) => (
-                    <div 
-                      key={index}
-                      className="border border-gray-200 rounded-lg overflow-hidden"
-                    >
-                      <button
-                        className={`w-full flex justify-between items-center p-4 text-left transition-colors ${
-                          expandedFaq === index ? 'bg-[#f74f4f]/5' : 'hover:bg-gray-50'
-                        }`}
-                        onClick={() => toggleFaq(index)}
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="topic">Topic</Label>
+                    <Select value={topic} onValueChange={setTopic} disabled={isSubmitting}>
+                      <SelectTrigger 
+                        id="topic"
+                        className={!topic && formError ? "border-red-300" : ""}
                       >
-                        <span className={`font-medium ${expandedFaq === index ? 'text-[#f74f4f]' : ''}`}>
-                          {faq.question}
-                        </span>
-                        <ChevronRight
-                          className={`h-5 w-5 transition-transform ${
-                            expandedFaq === index ? "transform rotate-90 text-[#f74f4f]" : "text-gray-400"
-                          }`}
+                        <SelectValue placeholder="Select a topic" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {supportTopics.map((topic) => (
+                          <SelectItem key={topic.value} value={topic.value}>
+                            {topic.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="message">Your Message</Label>
+                    <Textarea 
+                      id="message"
+                      value={message}
+                      onChange={(e) => setMessage(e.target.value)}
+                      placeholder="Please describe your issue or question in detail"
+                      rows={6}
+                      disabled={isSubmitting}
+                      className={(!message.trim() || message.length < 10) && formError ? "border-red-300" : ""}
+                    />
+                  </div>
+                  
+                  {/* Security verification section */}
+                  <div>
+                    <Label className="block mb-2">Security Verification</Label>
+                    <div className={`flex justify-center py-2 ${!captchaToken && formError ? "border border-red-300 rounded-md" : ""}`}>
+                      {HCAPTCHA_SITE_KEY ? (
+                        <HCaptcha
+                          ref={captchaRef}
+                          sitekey={HCAPTCHA_SITE_KEY}
+                          onVerify={handleVerificationSuccess}
+                          onError={handleCaptchaError}
+                          onExpire={() => setCaptchaToken(null)}
+                          theme="light"
                         />
-                      </button>
-                      <div
-                        className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                          expandedFaq === index ? "max-h-40" : "max-h-0"
-                        }`}
-                      >
-                        <div className="p-4 bg-gray-50 text-muted-foreground">
-                          {faq.answer}
+                      ) : (
+                        <div className="text-sm text-red-500 p-2">
+                          Security verification not configured. Please contact support.
                         </div>
-                      </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-                
-                <div className="mt-6">
-                  <Link 
-                    to="/listings"
-                    className="text-[#f74f4f] font-medium hover:underline inline-flex items-center"
-                  >
-                    Browse all listings
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </Link>
-                </div>
-              </div>
-            </div>
+                  </div>
+                  
+                  <div className="flex justify-end">
+                    <Button 
+                      type="submit" 
+                      disabled={isSubmitting || !captchaToken}
+                      className="bg-[#f74f4f] hover:bg-[#e43c3c]"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Sending...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="mr-2 h-4 w-4" />
+                          Send Message
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
             
-            {/* Sidebar with contact info and resources */}
-            <div className="w-full md:w-80">
-              <Card className="mb-6">
-                <CardHeader>
-                  <CardTitle className="text-lg">Contact Information</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex items-start">
-                      <Mail className="h-5 w-5 mr-3 text-[#f74f4f] mt-0.5" />
-                      <div>
-                        <p className="font-medium">Email Support</p>
-                        <a 
-                          href="mailto:support@roverpass.com" 
-                          className="text-sm text-[#f74f4f] hover:underline"
-                        >
-                          support@roverpass.com
-                        </a>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-start">
-                      <MessageSquare className="h-5 w-5 mr-3 text-[#f74f4f] mt-0.5" />
-                      <div>
-                        <p className="font-medium">Live Chat</p>
-                        <p className="text-sm text-muted-foreground">
-                          Available Monday to Friday<br />
-                          9:00 AM - 5:00 PM (CST)
-                        </p>
+            {/* FAQ Section */}
+            <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-100">
+              <h2 className="text-xl font-semibold mb-4 flex items-center">
+                <HelpCircle className="h-5 w-5 mr-2 text-[#f74f4f]" />
+                Frequently Asked Questions
+              </h2>
+              
+              <div className="space-y-3">
+                {faqs.map((faq, index) => (
+                  <div 
+                    key={index}
+                    className="border border-gray-200 rounded-lg overflow-hidden"
+                  >
+                    <button
+                      className={`w-full flex justify-between items-center p-4 text-left transition-colors ${
+                        expandedFaq === index ? 'bg-[#f74f4f]/5' : 'hover:bg-gray-50'
+                      }`}
+                      onClick={() => toggleFaq(index)}
+                    >
+                      <span className={`font-medium ${expandedFaq === index ? 'text-[#f74f4f]' : ''}`}>
+                        {faq.question}
+                      </span>
+                      <ChevronRight
+                        className={`h-5 w-5 transition-transform ${
+                          expandedFaq === index ? "transform rotate-90 text-[#f74f4f]" : "text-gray-400"
+                        }`}
+                      />
+                    </button>
+                    <div
+                      className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                        expandedFaq === index ? "max-h-40" : "max-h-0"
+                      }`}
+                    >
+                      <div className="p-4 bg-gray-50 text-muted-foreground">
+                        {faq.answer}
                       </div>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+                ))}
+              </div>
               
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Useful Resources</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-2">
-                    <li>
-                      <a 
-                        href="https://www.roverpass.com/blog" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-[#f74f4f] hover:underline flex items-center"
-                      >
-                        RV Industry Blog
-                        <ChevronRight className="h-4 w-4 ml-1" />
-                      </a>
-                    </li>
-                    <li>
-                      <a 
-                        href="https://www.roverpass.com/p/campground-reservation-software" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-[#f74f4f] hover:underline flex items-center"
-                      >
-                        Reservation Software
-                        <ChevronRight className="h-4 w-4 ml-1" />
-                      </a>
-                    </li>
-                    <li>
-                      <Link 
-                        to="/listings" 
-                        className="text-[#f74f4f] hover:underline flex items-center"
-                      >
-                        RV Parks For Sale
-                        <ChevronRight className="h-4 w-4 ml-1" />
-                      </Link>
-                    </li>
-                  </ul>
-                </CardContent>
-              </Card>
+              <div className="mt-6">
+                <Link 
+                  to="/listings"
+                  className="text-[#f74f4f] font-medium hover:underline inline-flex items-center"
+                >
+                  Browse all listings
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Link>
+              </div>
             </div>
           </div>
         </motion.div>
