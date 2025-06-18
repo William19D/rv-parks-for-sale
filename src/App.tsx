@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 
 // Pages
@@ -21,41 +21,57 @@ import AuthCallback from "./pages/AuthCallback";
 import EmailVerification from "./pages/EmailVerification";
 import ListingEdit from "./pages/ListingEdit";
 import UserProfile from "./pages/UserProfile";
-import Support from "./pages/Support"; // Add this import
+import Support from "./pages/Support";
 
 // Admin Pages
 import AdminDashboard from "./pages/admin/Dashboard";
-import SupportTickets from "./pages/admin/SupportTickets"; // Add this import
+import SupportTickets from "./pages/admin/SupportTickets";
 
 // Components
 import { useAuth, AuthProvider } from "@/hooks/useAuth";
 import { Loader2 } from "lucide-react";
 import { Header, HeaderSpacer } from "@/components/layout/Header";
-// Import AdminRoute component
 import { AdminRoute } from "@/components/admin/AdminRoute";
 
 const queryClient = new QueryClient();
 
-// Configuraciones para rutas
-const DOMAIN = "https://roverpass.com";
-const PATH_PREFIX = "/rv-parks-for-sale";
-
-// Detectar si estamos en un entorno que requiere redirección externa
-const isExternalRedirectRequired = () => {
-  // En desarrollo local o en roverpass.com, no redireccionamos
-  const isLocalhost = window.location.hostname === 'localhost' || 
-                      window.location.hostname === '127.0.0.1';
-  const isTargetDomain = window.location.hostname === 'roverpass.com';
+// Configuración de rutas adaptativa
+// Para obtener la configuración de rutas del entorno actual
+const getCurrentEnvironmentConfig = () => {
+  // Obtiene el hostname actual
+  const hostname = window.location.hostname;
+  const protocol = window.location.protocol;
   
-  return !isLocalhost && !isTargetDomain;
+  // Configuración por defecto (producción)
+  let domain = "https://roverpass.com";
+  let pathPrefix = "/rv-parks-for-sale";
+  
+  // Para entornos de desarrollo local (no requieren prefijo)
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    pathPrefix = ""; // Sin prefijo en desarrollo
+    domain = `${protocol}//${hostname}${window.location.port ? ':' + window.location.port : ''}`;
+  } else if (hostname !== 'roverpass.com') {
+    // Para otros dominios, usar la URL base actual
+    domain = `${protocol}//${hostname}${window.location.port ? ':' + window.location.port : ''}`;
+  }
+  
+  return { domain, pathPrefix };
 };
+
+// Configuraciones dinámicas para rutas
+const { domain: DOMAIN, pathPrefix: PATH_PREFIX } = getCurrentEnvironmentConfig();
 
 // Función para generar URLs absolutas
 export const absoluteUrl = (path: string): string => {
   // Asegurarse de que la ruta comience con /
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   
-  // Para enlaces internos en React Router
+  // Si estamos en localhost o dev, no añadir prefijo
+  if (PATH_PREFIX === "") {
+    return normalizedPath;
+  }
+  
+  // Para enlaces internos en React Router, añadir el prefijo
   return `${PATH_PREFIX}${normalizedPath}`;
 };
 
@@ -65,69 +81,6 @@ export const fullUrl = (path: string): string => {
   return `${DOMAIN}${url}`;
 };
 
-// Componente de redirección inteligente que envía al usuario a la URL externa
-const ExternalRedirect = ({ to }: { to: string }) => {
-  useEffect(() => {
-    window.location.href = fullUrl(to);
-  }, [to]);
-  
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center">
-      <Loader2 className="h-8 w-8 animate-spin text-[#f74f4f]" />
-      <p className="mt-4 text-gray-600">Redirecting to RoverPass.com...</p>
-    </div>
-  );
-};
-
-// Componente para manejar clicks en enlaces y redirigir si es necesario
-const LinkWrapper = ({ to, children }: { to: string, children: React.ReactNode }) => {
-  const handleClick = (e: React.MouseEvent) => {
-    if (isExternalRedirectRequired()) {
-      e.preventDefault();
-      window.location.href = fullUrl(to);
-    }
-  };
-  
-  return (
-    <a 
-      href={isExternalRedirectRequired() ? fullUrl(to) : absoluteUrl(to)}
-      onClick={handleClick}
-    >
-      {children}
-    </a>
-  );
-};
-
-// Trailing slash handling component
-const TrailingSlashHandler = () => {
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    // Skip if we're on the root path already with trailing slash or non-root with trailing slash
-    if (location.pathname === '/' || location.pathname.endsWith('/')) {
-      return;
-    }
-
-    // Check specifically for the case when someone enters without trailing slash
-    if (location.pathname === '') {
-      console.log('[Router] Redirecting to add trailing slash');
-      navigate('/', { replace: true });
-    }
-
-    // Log what we're doing for debugging
-    console.log('[Router] Adding trailing slash to:', location.pathname);
-    
-    // Add trailing slash and keep any query parameters and hash
-    navigate(`${location.pathname}/`, { 
-      replace: true,
-      state: location.state
-    });
-  }, [location.pathname, navigate]);
-
-  return null;
-};
-
 // Admin redirect component - ensures admins are directed to admin dashboard
 const AdminRedirect = () => {
   const { user, isAdmin, loading } = useAuth();
@@ -135,18 +88,15 @@ const AdminRedirect = () => {
   const location = useLocation();
   
   useEffect(() => {
-    // Only proceed if auth is loaded and user exists
     if (loading) return;
     
     if (user && isAdmin) {
       const currentPath = location.pathname;
       
-      // Don't redirect if user is already on an admin route
       const isAlreadyOnAdminRoute = 
         currentPath.startsWith('/admin/') || 
         currentPath === '/admin';
         
-      // Check if it's a fresh login through auth callback or login success page
       const isAuthFlow = 
         currentPath === '/auth/callback/' || 
         currentPath === '/auth/success/' || 
@@ -167,14 +117,8 @@ const AppRoutes = () => {
   const { user, loading, isAdmin, roles } = useAuth();
   const location = useLocation();
   
-  // Si necesitamos redirección externa y no estamos en la ruta raíz, redirigir
-  if (isExternalRedirectRequired() && location.pathname !== PATH_PREFIX && location.pathname !== `${PATH_PREFIX}/`) {
-    return <ExternalRedirect to={location.pathname.replace(PATH_PREFIX, '')} />;
-  }
-  
   // Detect admin routes
-  const isAdminRoute = location.pathname.startsWith('/admin') || 
-                       location.pathname.startsWith(`${PATH_PREFIX}/admin`);
+  const isAdminRoute = location.pathname.startsWith('/admin');
   
   // Debug logging
   useEffect(() => {
@@ -278,9 +222,9 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-          {/* Add the TrailingSlashHandler component here */}
-          <TrailingSlashHandler />
+        <HashRouter>
           <AppRoutes />
+        </HashRouter>
       </TooltipProvider>
     </AuthProvider>
   </QueryClientProvider>
