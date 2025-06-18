@@ -278,11 +278,9 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter basename={PATH_PREFIX}>
           {/* Add the TrailingSlashHandler component here */}
           <TrailingSlashHandler />
           <AppRoutes />
-        </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
   </QueryClientProvider>
