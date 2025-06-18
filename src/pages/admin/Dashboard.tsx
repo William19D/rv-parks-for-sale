@@ -97,6 +97,8 @@ const statusOptions = [
 const MAX_RETRY_ATTEMPTS = 3;
 
 const AdminDashboard = () => {
+  console.log('🔄 AdminDashboard component rendered');
+  
   const [activeTab, setActiveTab] = useState<ListingStatus>('all');
   const [allListings, setAllListings] = useState<Listing[]>([]);
   const [filteredListings, setFilteredListings] = useState<Listing[]>([]);
@@ -133,7 +135,9 @@ const AdminDashboard = () => {
   
   // Clean up on unmount
   useEffect(() => {
+    console.log('🔧 Setting up cleanup effect');
     return () => {
+      console.log('🧹 Cleaning up component resources');
       isMountedRef.current = false;
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -143,12 +147,14 @@ const AdminDashboard = () => {
   
   // Select a predefined rejection reason
   const selectReason = (index: number) => {
+    console.log(`🏷️ Selected rejection reason index: ${index}`, REJECTION_REASONS[index]);
     setSelectedReasonIndex(index);
     setRejectionReason(REJECTION_REASONS[index]);
   };
 
   // Simpler, more reliable fetch function with retry capability
   const fetchAllListings = async (isRetry = false) => {
+    console.log(`📡 fetchAllListings called (isRetry: ${isRetry})`);
     // If this is a fresh fetch (not a retry), reset state
     if (!isRetry) {
       setRetryCount(0);
@@ -157,6 +163,7 @@ const AdminDashboard = () => {
     
     // Clear any previous timeout
     if (timeoutRef.current) {
+      console.log('⏱️ Clearing previous timeout');
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
@@ -169,11 +176,12 @@ const AdminDashboard = () => {
       
       // Only retry if we haven't reached max attempts
       if (retryCount < MAX_RETRY_ATTEMPTS) {
-        console.log(`[Admin] Fetch timeout - retrying (${retryCount + 1}/${MAX_RETRY_ATTEMPTS})...`);
+        console.log(`⏱️ Fetch timeout - retrying (${retryCount + 1}/${MAX_RETRY_ATTEMPTS})...`);
         
         setRetryCount(prev => prev + 1);
         fetchAllListings(true);
       } else {
+        console.log('❌ Max retry attempts reached, showing error');
         setIsLoading(false);
         setFetchError("Connection timed out. The server is taking too long to respond.");
         
@@ -186,7 +194,7 @@ const AdminDashboard = () => {
     }, 15000); // 15 second timeout (increased from 10s for slower connections)
     
     try {
-      console.log(`[Admin] Fetching listings${isRetry ? ` (attempt ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})` : ''}...`);
+      console.log(`🔍 Fetching listings${isRetry ? ` (attempt ${retryCount + 1}/${MAX_RETRY_ATTEMPTS})` : ''}...`);
       
       // Use Promise.race to implement our own timeout mechanism instead of AbortController
       const { data, error } = await supabase
@@ -194,22 +202,28 @@ const AdminDashboard = () => {
         .select('id, title, price, status, created_at, rejection_reason, city, state, property_type, user_id')
         .order('created_at', { ascending: false });
       
+      console.log('📊 Supabase response:', { dataReceived: !!data, errorReceived: !!error });
+      
       // Clear the timeout since we got a response
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
       
-      if (!isMountedRef.current) return; // Don't update state if component unmounted
+      if (!isMountedRef.current) {
+        console.log('⚠️ Component unmounted, abandoning fetch processing');
+        return;
+      }
       
       if (error) {
-        console.error('[Admin] Database error:', error);
+        console.error('❌ Database error:', error);
         throw new Error(`Database error: ${error.message}`);
       }
       
-      console.log(`[Admin] Successfully fetched ${data?.length || 0} total listings`);
+      console.log(`✅ Successfully fetched ${data?.length || 0} total listings`);
       
       if (!data || data.length === 0) {
+        console.log('ℹ️ No listings found in database');
         setAllListings([]);
         setFilteredListings([]);
         setStatusCounts({
@@ -237,6 +251,8 @@ const AdminDashboard = () => {
         user_id: item.user_id,
       }));
       
+      console.log('🔄 Processing completed - updating component state');
+      
       // Update all states
       setAllListings(processedListings);
       updateFilteredListings(processedListings, activeTab);
@@ -262,11 +278,13 @@ const AdminDashboard = () => {
       
       if (!isMountedRef.current) return; // Don't update state if component unmounted
       
-      console.error('[Admin] Error in fetchAllListings:', error);
+      console.error('❌ Error in fetchAllListings:', error);
       
       // Retry logic if not reached max attempts
       if (retryCount < MAX_RETRY_ATTEMPTS - 1) {
         setRetryCount(prev => prev + 1);
+        
+        console.log(`🔄 Will retry fetch in 2 seconds (Attempt ${retryCount + 2}/${MAX_RETRY_ATTEMPTS})`);
         
         toast({
           title: "Error Loading Data",
@@ -281,6 +299,7 @@ const AdminDashboard = () => {
         }, 2000);
       } else {
         // Max retries reached, show error
+        console.log('❌ Max retry attempts reached - displaying error state');
         setIsLoading(false);
         setFetchError(error.message || "Failed to load listings data");
         
@@ -300,30 +319,39 @@ const AdminDashboard = () => {
   
   // Helper to update filtered listings based on active tab
   const updateFilteredListings = (listings: Listing[], tab: ListingStatus) => {
+    console.log(`🔍 Filtering listings by tab: ${tab}`);
     if (tab === 'all') {
       setFilteredListings(listings);
+      console.log(`👁️ Showing all ${listings.length} listings`);
     } else {
-      setFilteredListings(listings.filter(listing => listing.status === tab));
+      const filtered = listings.filter(listing => listing.status === tab);
+      setFilteredListings(filtered);
+      console.log(`👁️ Showing ${filtered.length} listings with status "${tab}"`);
     }
   };
   
   // Helper to calculate status counts
   const updateStatusCounts = (listings: Listing[]) => {
-    setStatusCounts({
+    console.log('📊 Updating status counts');
+    const counts = {
       all: listings.length,
       pending: listings.filter(l => l.status === 'pending').length,
       approved: listings.filter(l => l.status === 'approved').length,
       rejected: listings.filter(l => l.status === 'rejected').length
-    });
+    };
+    console.log('📊 New counts:', counts);
+    setStatusCounts(counts);
   };
 
   // Load ALL listings when component mounts
   useEffect(() => {
+    console.log('🏁 Component mounted - fetching initial listings data');
     fetchAllListings();
   }, []);
   
   // Handle tab changes - filter the existing data
   useEffect(() => {
+    console.log(`📑 Tab changed to: ${activeTab}`);
     if (allListings.length > 0) {
       updateFilteredListings(allListings, activeTab);
     }
@@ -331,9 +359,11 @@ const AdminDashboard = () => {
 
   // Handle search filtering
   useEffect(() => {
+    console.log(`🔎 Search query changed: "${searchQuery}"`);
     if (allListings.length === 0) return;
     
     if (!searchQuery.trim()) {
+      console.log('🔎 Empty search query - showing all listings for current tab');
       updateFilteredListings(allListings, activeTab);
       return;
     }
@@ -353,31 +383,40 @@ const AdminDashboard = () => {
       listing.property_type?.toLowerCase().includes(query)
     );
     
+    console.log(`🔎 Found ${searchFilteredListings.length} listings matching search query`);
     setFilteredListings(searchFilteredListings);
   }, [searchQuery, allListings, activeTab]);
 
   // Handle tab change
   const handleTabChange = (value: string) => {
+    console.log(`📑 Tab being changed to: ${value}`);
     setActiveTab(value as ListingStatus);
   };
 
   // Open status change dialog
   const openStatusDialog = (listing: Listing, status: string) => {
+    console.log(`🔔 Opening status dialog for listing: ${listing.id}, changing status to: ${status}`);
+    console.log('📋 Listing details:', listing);
+    
     setSelectedListing(listing);
     setNewStatus(status);
     
     if (status === 'rejected') {
+      console.log('⛔ Rejection workflow initiated');
       // Pre-fill with existing rejection reason if available
       setRejectionReason(listing.rejection_reason || '');
       setSelectedReasonIndex(null);
       setIsRejectDialogOpen(true);
+      console.log('🪟 Reject dialog set to open');
     } else {
+      console.log('🪟 Status dialog set to open');
       setIsStatusDialogOpen(true);
     }
   };
   
   // Direct reject handler (opens reject dialog)
   const handleRejectClick = (listing: Listing) => {
+    console.log(`⛔ Direct reject button clicked for listing: ${listing.id}`);
     setSelectedListing(listing);
     setRejectionReason(listing.rejection_reason || '');
     setSelectedReasonIndex(null);
@@ -386,6 +425,7 @@ const AdminDashboard = () => {
 
   // Open delete confirmation dialog
   const openDeleteDialog = (listing: Listing) => {
+    console.log(`🗑️ Opening delete dialog for listing: ${listing.id}`);
     setSelectedListing(listing);
     setIsDeleteDialogOpen(true);
   };
@@ -395,18 +435,18 @@ const AdminDashboard = () => {
     // Using a safe approach with multiple fallbacks
     try {
       const listingId = listing.id;
-      console.log(`[Admin] Navigating to public listing: /listings/${listingId}`);
+      console.log(`👁️ Navigating to public listing: /listings/${listingId}`);
       
       // First try direct navigation
       navigate(`/listings/${listingId}`);
     } catch (err) {
-      console.error("[Admin] Navigation failed:", err);
+      console.error("❌ Navigation failed:", err);
       
       // Fallback to window.open
       try {
         window.open(`/listings/${listing.id}`, '_blank');
       } catch (fallbackErr) {
-        console.error("[Admin] Fallback navigation failed:", fallbackErr);
+        console.error("❌ Fallback navigation failed:", fallbackErr);
         toast({
           variant: "destructive",
           title: "Navigation Error",
@@ -419,9 +459,10 @@ const AdminDashboard = () => {
   // Edit listing
   const editListing = (listing: Listing) => {
     try {
+      console.log(`✏️ Navigating to edit page for listing: ${listing.id}`);
       navigate(`/admin/listings/${listing.id}/edit`);
     } catch (err) {
-      console.error("[Admin] Failed to navigate to edit view:", err);
+      console.error("❌ Failed to navigate to edit view:", err);
       toast({
         variant: "destructive",
         title: "Navigation Error",
@@ -432,7 +473,13 @@ const AdminDashboard = () => {
 
   // Handle rejection
   const handleReject = async () => {
-    if (!selectedListing) return;
+    if (!selectedListing) {
+      console.error("❌ Reject called with no selected listing");
+      return;
+    }
+    
+    console.log(`⛔ Rejecting listing: ${selectedListing.id}`);
+    console.log(`⛔ Rejection reason: "${rejectionReason.trim() || 'No reason provided'}"`);
     
     try {
       // Convert ID to number if needed
@@ -440,16 +487,27 @@ const AdminDashboard = () => {
         ? parseInt(selectedListing.id)
         : selectedListing.id;
       
+      console.log(`📝 Calling Supabase to update listing ${listingId} status to rejected`);
+      
+      const updateData = { 
+        status: 'rejected',
+        rejection_reason: rejectionReason.trim() || 'No reason provided',
+        updated_at: new Date().toISOString()
+      };
+      
+      console.log('📝 Update data:', updateData);
+      
       const { error } = await supabase
         .from('listings')
-        .update({ 
-          status: 'rejected',
-          rejection_reason: rejectionReason.trim() || 'No reason provided',
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', listingId);
       
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Supabase error:', error);
+        throw error;
+      }
+      
+      console.log('✅ Listing rejected successfully in database');
       
       toast({
         title: "Listing Rejected",
@@ -467,18 +525,20 @@ const AdminDashboard = () => {
           : listing
       );
       
+      console.log('🔄 Updating local state with rejected listing');
       setAllListings(updatedListings);
       updateFilteredListings(updatedListings, activeTab);
       updateStatusCounts(updatedListings);
       
     } catch (error) {
-      console.error('Error rejecting listing:', error);
+      console.error('❌ Error rejecting listing:', error);
       toast({
         title: "Error",
         description: "Failed to reject listing. Please try again.",
         variant: "destructive",
       });
     } finally {
+      console.log('🪟 Closing reject dialog');
       setIsRejectDialogOpen(false);
       setRejectionReason('');
       setSelectedReasonIndex(null);
@@ -487,7 +547,14 @@ const AdminDashboard = () => {
 
   // Update listing status
   const updateListingStatus = async () => {
-    if (!selectedListing || !newStatus) return;
+    console.log('🔄 updateListingStatus called');
+    console.log('📋 Selected listing:', selectedListing);
+    console.log('📋 New status:', newStatus);
+    
+    if (!selectedListing || !newStatus) {
+      console.error('❌ Missing data - cannot update status');
+      return;
+    }
     
     try {
       // Convert ID if needed
@@ -495,16 +562,28 @@ const AdminDashboard = () => {
         ? parseInt(selectedListing.id)
         : selectedListing.id;
       
+      console.log(`📝 Preparing to update listing ${listingId} status to ${newStatus}`);
+      
       const updateData = newStatus === 'approved' 
         ? { status: newStatus, rejection_reason: null, updated_at: new Date().toISOString() }
         : { status: newStatus, updated_at: new Date().toISOString() };
+      
+      console.log('📝 Update data:', updateData);
         
+      console.log('📡 Calling Supabase update API');
       const { error } = await supabase
         .from('listings')
         .update(updateData)
         .eq('id', listingId);
       
-      if (error) throw error;
+      console.log('📡 Supabase response error:', error);
+      
+      if (error) {
+        console.error('❌ Supabase error:', error);
+        throw error;
+      }
+      
+      console.log(`✅ Listing status successfully updated to ${newStatus}`);
       
       toast({
         title: "Status Updated",
@@ -522,25 +601,32 @@ const AdminDashboard = () => {
           : listing
       );
       
+      console.log('🔄 Updating local state with new listing status');
       setAllListings(updatedListings);
       updateFilteredListings(updatedListings, activeTab);
       updateStatusCounts(updatedListings);
       
     } catch (error) {
-      console.error('Error updating status:', error);
+      console.error('❌ Error updating status:', error);
       toast({
         title: "Error",
         description: "Failed to update listing status",
         variant: "destructive",
       });
     } finally {
+      console.log('🪟 Closing status dialog');
       setIsStatusDialogOpen(false);
     }
   };
 
   // Delete listing
   const deleteListing = async () => {
-    if (!selectedListing) return;
+    if (!selectedListing) {
+      console.error("❌ Delete called with no selected listing");
+      return;
+    }
+    
+    console.log(`🗑️ Deleting listing: ${selectedListing.id}`);
     
     try {
       // Convert ID if needed
@@ -548,12 +634,19 @@ const AdminDashboard = () => {
         ? parseInt(selectedListing.id)
         : selectedListing.id;
       
+      console.log(`📝 Calling Supabase to delete listing ${listingId}`);
+      
       const { error } = await supabase
         .from('listings')
         .delete()
         .eq('id', listingId);
       
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Supabase error:', error);
+        throw error;
+      }
+      
+      console.log('✅ Listing deleted successfully from database');
       
       toast({
         title: "Listing Deleted",
@@ -561,19 +654,21 @@ const AdminDashboard = () => {
       });
       
       // Update local state
+      console.log('🔄 Removing deleted listing from local state');
       const updatedListings = allListings.filter(listing => listing.id !== selectedListing.id);
       setAllListings(updatedListings);
       updateFilteredListings(updatedListings, activeTab);
       updateStatusCounts(updatedListings);
       
     } catch (error) {
-      console.error('Error deleting listing:', error);
+      console.error('❌ Error deleting listing:', error);
       toast({
         title: "Error",
         description: "Failed to delete listing",
         variant: "destructive",
       });
     } finally {
+      console.log('🪟 Closing delete dialog');
       setIsDeleteDialogOpen(false);
     }
   };
@@ -610,7 +705,10 @@ const AdminDashboard = () => {
         <div className="flex gap-2">
           <Button 
             variant="outline"
-            onClick={() => fetchAllListings()}
+            onClick={() => {
+              console.log('🔄 Refresh button clicked');
+              fetchAllListings();
+            }}
             disabled={isLoading}
             className="flex items-center gap-1"
           >
@@ -618,7 +716,10 @@ const AdminDashboard = () => {
             {isLoading ? 'Loading...' : 'Refresh Data'}
           </Button>
           <Button 
-            onClick={() => navigate('/admin/listings/new')}
+            onClick={() => {
+              console.log('➕ Add new listing button clicked');
+              navigate('/admin/listings/new');
+            }}
             className="bg-[#f74f4f] hover:bg-[#e43c3c]"
           >
             Add New Listing
@@ -818,8 +919,12 @@ const AdminDashboard = () => {
                               variant="ghost"
                               size="sm"
                               className="h-8 w-8 p-0 text-green-600 hover:text-green-800 hover:bg-green-50"
-                              onClick={() => openStatusDialog(listing, 'approved')}
+                              onClick={() => {
+                                console.log(`✅ Direct approve button clicked for listing: ${listing.id}`);
+                                openStatusDialog(listing, 'approved');
+                              }}
                               title="Approve listing"
+                              data-testid={`approve-listing-${listing.id}`}
                             >
                               <CheckCheck className="h-4 w-4" />
                             </Button>
@@ -852,7 +957,10 @@ const AdminDashboard = () => {
                           <DropdownMenuContent align="end">
                             {/* Status change options */}
                             {listing.status !== 'approved' && (
-                              <DropdownMenuItem onClick={() => openStatusDialog(listing, 'approved')}>
+                              <DropdownMenuItem onClick={() => {
+                                console.log(`✅ Approve option selected from dropdown for listing: ${listing.id}`);
+                                openStatusDialog(listing, 'approved');
+                              }}>
                                 <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
                                 <span>Approve</span>
                               </DropdownMenuItem>
@@ -893,7 +1001,13 @@ const AdminDashboard = () => {
       </div>
 
       {/* Status Change Dialog */}
-      <AlertDialog open={isStatusDialogOpen} onOpenChange={setIsStatusDialogOpen}>
+      <AlertDialog 
+        open={isStatusDialogOpen} 
+        onOpenChange={(open) => {
+          console.log(`🪟 Status dialog ${open ? 'opened' : 'closing'}`);
+          setIsStatusDialogOpen(open);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Update Listing Status</AlertDialogTitle>
@@ -902,14 +1016,28 @@ const AdminDashboard = () => {
               {newStatus === 'pending' && "This listing will be marked as pending review."}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="py-2">
+            <div className="text-sm bg-blue-50 p-3 rounded-md border border-blue-100 mb-1">
+              <p><strong>Debug Info:</strong></p>
+              <p>Selected listing ID: {selectedListing?.id || 'None'}</p>
+              <p>New status: {newStatus || 'None'}</p>
+              <p>Dialog open state: {isStatusDialogOpen ? 'Open' : 'Closed'}</p>
+            </div>
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => {
+              console.log('❌ Status change canceled');
+            }}>Cancel</AlertDialogCancel>
             <AlertDialogAction 
-              onClick={updateListingStatus}
+              onClick={() => {
+                console.log('✅ Status change confirmed - calling updateListingStatus()');
+                updateListingStatus();
+              }}
               className={
                 newStatus === 'approved' ? 'bg-green-600 hover:bg-green-700' :
                 'bg-yellow-600 hover:bg-yellow-700'
               }
+              data-testid="confirm-status-change"
             >
               Confirm
             </AlertDialogAction>
@@ -918,7 +1046,13 @@ const AdminDashboard = () => {
       </AlertDialog>
 
       {/* IMPROVED: Rejection Dialog with Reason Selection */}
-      <AlertDialog open={isRejectDialogOpen} onOpenChange={setIsRejectDialogOpen}>
+      <AlertDialog 
+        open={isRejectDialogOpen} 
+        onOpenChange={(open) => {
+          console.log(`🪟 Reject dialog ${open ? 'opened' : 'closing'}`);
+          setIsRejectDialogOpen(open);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Reject Listing</AlertDialogTitle>
@@ -955,6 +1089,7 @@ const AdminDashboard = () => {
                 placeholder="Explain why this listing is being rejected..."
                 value={rejectionReason}
                 onChange={(e) => {
+                  console.log(`📝 Rejection reason updated: "${e.target.value}"`);
                   setRejectionReason(e.target.value);
                   setSelectedReasonIndex(null);
                 }}
@@ -963,12 +1098,23 @@ const AdminDashboard = () => {
                 autoFocus
               />
             </div>
+            <div className="text-sm bg-blue-50 p-3 rounded-md border border-blue-100">
+              <p><strong>Debug Info:</strong></p>
+              <p>Selected listing ID: {selectedListing?.id || 'None'}</p>
+              <p>Current reason: {rejectionReason || 'None'}</p>
+              <p>Selected reason index: {selectedReasonIndex !== null ? selectedReasonIndex : 'None'}</p>
+            </div>
           </div>
           
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => {
+              console.log('❌ Rejection canceled');
+            }}>Cancel</AlertDialogCancel>
             <AlertDialogAction 
-              onClick={handleReject}
+              onClick={() => {
+                console.log('⛔ Rejection confirmed - calling handleReject()');
+                handleReject();
+              }}
               className="bg-red-600 hover:bg-red-700"
             >
               Reject Listing
@@ -978,7 +1124,13 @@ const AdminDashboard = () => {
       </AlertDialog>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      <AlertDialog 
+        open={isDeleteDialogOpen} 
+        onOpenChange={(open) => {
+          console.log(`🪟 Delete dialog ${open ? 'opened' : 'closing'}`);
+          setIsDeleteDialogOpen(open);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Listing</AlertDialogTitle>
@@ -987,10 +1139,20 @@ const AdminDashboard = () => {
               "{selectedListing?.title}" and remove all associated data.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="text-sm bg-blue-50 p-3 rounded-md border border-blue-100 my-2">
+            <p><strong>Debug Info:</strong></p>
+            <p>Selected listing ID: {selectedListing?.id || 'None'}</p>
+            <p>Selected listing title: {selectedListing?.title || 'None'}</p>
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => {
+              console.log('❌ Delete canceled');
+            }}>Cancel</AlertDialogCancel>
             <AlertDialogAction 
-              onClick={deleteListing}
+              onClick={() => {
+                console.log('🗑️ Delete confirmed - calling deleteListing()');
+                deleteListing();
+              }}
               className="bg-red-600 hover:bg-red-700"
             >
               Delete

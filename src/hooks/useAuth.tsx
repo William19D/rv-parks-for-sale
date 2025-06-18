@@ -247,7 +247,56 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         return;
       }
 
-      // Try to use the edge function to get permissions
+      // Use the edge function to get role permissions
+      if (AUTH_API_URL) {
+        try {
+          const response = await fetch(AUTH_API_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${currentSession.access_token}`
+            },
+            body: JSON.stringify({
+              action: 'get_role_permissions',
+              role
+            })
+          });
+
+          if (!response.ok) {
+            console.error(`[Auth] Error getting role permissions: ${response.status}`);
+            // Fall back to checking specific permissions
+            await fallbackGetPermissions(currentSession, role);
+            return;
+          }
+
+          const data = await response.json();
+          
+          if (data.permissions && Array.isArray(data.permissions)) {
+            setPermissions(data.permissions);
+            console.log(`[Auth] User permissions from API: ${data.permissions.join(', ')}`);
+          } else {
+            console.warn('[Auth] No permissions returned from API, falling back to direct query');
+            await fetchDirectPermissions(role);
+          }
+        } catch (error) {
+          console.error('[Auth] Error fetching role permissions:', error);
+          // Fall back to direct method
+          await fallbackGetPermissions(currentSession, role);
+        }
+      } else {
+        // No edge function, use direct query
+        await fetchDirectPermissions(role);
+      }
+    } catch (error) {
+      console.error('[Auth] Error in getUserPermissions:', error);
+      setPermissions([]);
+    }
+  };
+
+  // Fallback method to check specific permissions
+  const fallbackGetPermissions = async (currentSession: Session, role: string) => {
+    try {
+      // Try to use check_permission endpoint for admin dashboard
       if (AUTH_API_URL) {
         try {
           const response = await fetch(AUTH_API_URL, {
@@ -258,7 +307,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             },
             body: JSON.stringify({
               action: 'check_permission',
-              permission: 'view_admin_dashboard'  // Testing admin permission
+              permission: 'view_admin_dashboard'
             })
           });
   
@@ -267,19 +316,19 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             
             if (data.hasPermission) {
               // If user has admin dashboard permission, add it to permissions
-              setPermissions(prev => [...prev, 'view_admin_dashboard']);
+              setPermissions(['view_admin_dashboard']);
+              return;
             }
           }
-        } catch (permError) {
-          console.error('[Auth] Error checking admin permission:', permError);
+        } catch (error) {
+          console.error('[Auth] Error checking specific permission:', error);
         }
       }
-
-      // Fall back to direct DB query for permissions
-      await fetchDirectPermissions(role);
       
+      // Fall back to direct DB query for all permissions
+      await fetchDirectPermissions(role);
     } catch (error) {
-      console.error('[Auth] Error fetching permissions:', error);
+      console.error('[Auth] Error in fallback permission check:', error);
       setPermissions([]);
     }
   };
