@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 
 // Pages
@@ -46,9 +46,11 @@ const getCurrentEnvironmentConfig = () => {
   let domain = "https://roverpass.com";
   let pathPrefix = "/rv-parks-for-sale";
   
-  // Para entornos de desarrollo local (no requieren prefijo)
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    pathPrefix = ""; // Sin prefijo en desarrollo
+  // For Vercel deployments or local development
+  if (hostname === 'localhost' || 
+      hostname === '127.0.0.1' || 
+      hostname.includes('vercel.app')) {
+    pathPrefix = ""; // No prefix needed for Vercel or local development
     domain = `${protocol}//${hostname}${window.location.port ? ':' + window.location.port : ''}`;
   } else if (hostname !== 'roverpass.com') {
     // Para otros dominios, usar la URL base actual
@@ -222,9 +224,9 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <HashRouter>
+        <BrowserRouter>
           <AppRoutes />
-        </HashRouter>
+        </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>
   </QueryClientProvider>
