@@ -38,24 +38,11 @@ const queryClient = new QueryClient();
 // Configuración de rutas adaptativa
 // Para obtener la configuración de rutas del entorno actual
 const getCurrentEnvironmentConfig = () => {
-  // Obtiene el hostname actual
-  const hostname = window.location.hostname;
-  const protocol = window.location.protocol;
+  // Always use root path for Vercel deployment
+  const pathPrefix = "";
   
-  // Configuración por defecto (producción)
-  let domain = "https://roverpass.com";
-  let pathPrefix = "/rv-parks-for-sale";
-  
-  // For Vercel deployments or local development
-  if (hostname === 'localhost' || 
-      hostname === '127.0.0.1' || 
-      hostname.includes('vercel.app')) {
-    pathPrefix = ""; // No prefix needed for Vercel or local development
-    domain = `${protocol}//${hostname}${window.location.port ? ':' + window.location.port : ''}`;
-  } else if (hostname !== 'roverpass.com') {
-    // Para otros dominios, usar la URL base actual
-    domain = `${protocol}//${hostname}${window.location.port ? ':' + window.location.port : ''}`;
-  }
+  // Use current domain
+  const domain = window.location.origin;
   
   return { domain, pathPrefix };
 };
